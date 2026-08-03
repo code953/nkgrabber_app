@@ -17,3 +17,4 @@ linter:
     flutter_style_todos: false
     sort_pub_dependencies: false
     prefer_initializing_formals: false
+    cascade_invocations: false
