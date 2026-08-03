@@ -29,6 +29,9 @@ class NetworkException extends AppException {
 enum NetworkExceptionType {
   timeout,
   noConnection,
+  badRequest,
+  conflict,
+  rateLimited,
   serverError,
   cancelled,
   unknown,
@@ -52,6 +55,7 @@ enum AuthExceptionType {
   licenseExpired,
   deviceLimitReached,
   unbindCooldown,
+  forbidden,
   rateLimited,
   validationError,
 }
