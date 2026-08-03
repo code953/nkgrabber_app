@@ -3,12 +3,15 @@
 /// Defines all routes and redirect guards for auth state.
 library;
 
-import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:nkgrabber/app/shell_page.dart';
 import 'package:nkgrabber/app/startup_page.dart';
+import 'package:nkgrabber/features/accounts/presentation/accounts_page.dart';
+import 'package:nkgrabber/features/courses/presentation/course_config_page.dart';
+import 'package:nkgrabber/features/grabber/presentation/grabber_page.dart';
 import 'package:nkgrabber/features/license/presentation/activation_page.dart';
 import 'package:nkgrabber/features/settings/presentation/consent_page.dart';
+import 'package:nkgrabber/features/settings/presentation/settings_page.dart';
 
 /// Route path constants.
 class AppRoutes {
@@ -48,19 +51,19 @@ GoRouter createRouter() {
         routes: [
           GoRoute(
             path: AppRoutes.accounts,
-            builder: (context, state) => const Placeholder(),
+            builder: (context, state) => const AccountsPage(),
           ),
           GoRoute(
             path: AppRoutes.courses,
-            builder: (context, state) => const Placeholder(),
+            builder: (context, state) => const CourseConfigPage(),
           ),
           GoRoute(
             path: AppRoutes.grabber,
-            builder: (context, state) => const Placeholder(),
+            builder: (context, state) => const GrabberPage(),
           ),
           GoRoute(
             path: AppRoutes.settings,
-            builder: (context, state) => const Placeholder(),
+            builder: (context, state) => const SettingsPage(),
           ),
         ],
       ),
