@@ -43,12 +43,19 @@ class AppLogger {
     Logger.root.level = level.level;
     Logger.root.onRecord.listen((record) {
       final sanitized = LogSanitizer.sanitize(record.message);
+      // Sanitize the error object too — it may carry raw request bodies,
+      // DioException.requestOptions.data, or exception messages containing
+      // passwords, cookies, and tokens.
+      final rawError = record.error;
+      final sanitizedError = rawError != null
+          ? LogSanitizer.sanitize(rawError.toString())
+          : null;
       developer.log(
         sanitized,
         time: record.time,
         level: record.level.value,
         name: record.loggerName,
-        error: record.error,
+        error: sanitizedError,
         stackTrace: record.stackTrace,
       );
     });
