@@ -15,14 +15,18 @@ class ClockSyncInterceptor extends Interceptor {
   @override
   void onResponse(Response<dynamic> response, ResponseInterceptorHandler handler) {
     final data = response.data;
-    if (data is Map<String, dynamic> && data.containsKey('serverTime')) {
-      final serverTimeStr = data['serverTime'] as String?;
+    if (data is Map<String, dynamic>) {
+      // serverTime may be at the top level or inside the `data` envelope.
+      final inner = data['data'];
+      final serverTimeStr = (data['serverTime'] as String?) ??
+          (inner is Map<String, dynamic>
+              ? inner['serverTime'] as String?
+              : null);
       if (serverTimeStr != null) {
         final serverTime = DateTime.tryParse(serverTimeStr);
         if (serverTime != null) {
           final localTime = DateTime.now().toUtc();
-          final offsetMs =
-              serverTime.difference(localTime).inMilliseconds;
+          final offsetMs = serverTime.difference(localTime).inMilliseconds;
           onOffsetUpdated(offsetMs);
         }
       }
