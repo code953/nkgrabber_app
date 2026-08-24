@@ -13,6 +13,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:nkgrabber/core/logging/app_logger.dart';
 import 'package:nkgrabber/core/logging/log_sanitizer.dart';
+import 'package:nkgrabber/core/utils/constants.dart';
 import 'package:nkgrabber/infrastructure/backend/backend_repository.dart';
 import 'package:nkgrabber/infrastructure/backend/dtos/crash_report_dto.dart';
 
@@ -90,7 +91,7 @@ class CrashReporter {
     );
   }
 
-  /// Send a crash report (best-effort, max 3 retries).
+  /// Send a crash report (best-effort, retries with backoff).
   Future<void> _sendReport({
     required String crashType,
     required String stackTrace,
@@ -106,15 +107,23 @@ class CrashReporter {
       timestamp: DateTime.now().toUtc().toIso8601String(),
     );
 
-    for (var attempt = 0; attempt < 3; attempt++) {
+    for (var attempt = 0; attempt < AppConstants.crashReportMaxRetries; attempt++) {
       try {
         await _backendRepo.reportCrash(report);
         return;
       } on Exception catch (e) {
         _logger.debug('Crash report attempt ${attempt + 1} failed: $e');
+        if (attempt + 1 < AppConstants.crashReportMaxRetries) {
+          // Exponential backoff: 1s, 2s, 4s, …
+          await Future<void>.delayed(
+            Duration(milliseconds: 1000 * (1 << attempt)),
+          );
+        }
       }
     }
-    _logger.debug('Crash report discarded after 3 attempts');
+    _logger.debug(
+      'Crash report discarded after ${AppConstants.crashReportMaxRetries} attempts',
+    );
   }
 
   /// Hash the installId for privacy (never send raw installId).
