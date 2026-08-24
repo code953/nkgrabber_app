@@ -52,8 +52,8 @@ Dio createBackendClient({
       onTokenInvalid: onTokenInvalid,
     ),
     ClockSyncInterceptor(onOffsetUpdated: onClockOffsetUpdated),
-    ErrorInterceptor(),
     BackendLoggingInterceptor(),
+    ErrorInterceptor(),
   ]);
 
   return dio;

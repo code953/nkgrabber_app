@@ -32,9 +32,14 @@ class BackendLoggingInterceptor extends Interceptor {
     final sanitizedUrl = LogSanitizer.sanitize(
       err.requestOptions.uri.toString(),
     );
+    // By the time logging runs, err.error may already be an AppException
+    // set by ErrorInterceptor. Prefer its message for readability.
+    final appEx = err.error;
+    final detail = appEx is Exception
+        ? appEx.toString()
+        : (err.message ?? 'unknown error');
     _logger.warn(
-      '✗ ${err.response?.statusCode ?? 'N/A'} $sanitizedUrl: '
-      '${err.message ?? 'unknown error'}',
+      '✗ ${err.response?.statusCode ?? 'N/A'} $sanitizedUrl: $detail',
     );
     handler.next(err);
   }
