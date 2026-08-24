@@ -11,6 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nkgrabber/core/logging/app_logger.dart';
 import 'package:nkgrabber/core/security/secure_storage.dart';
 import 'package:nkgrabber/core/security/secure_storage_keys.dart';
+import 'package:nkgrabber/core/utils/extensions.dart';
 import 'package:nkgrabber/infrastructure/campus/campus_adapter.dart';
 import 'package:nkgrabber/infrastructure/campus/campus_adapter_impl.dart';
 import 'package:nkgrabber/infrastructure/campus/campus_client_factory.dart';
@@ -100,7 +101,7 @@ class AccountsNotifier extends StateNotifier<AccountsState> {
       await _accountDao.insertAccount(
         AccountsCompanion.insert(
           id: id,
-          displayName: '${result.studentName}（${studentNo.substring(studentNo.length - 4)}）',
+          displayName: '${result.studentName}（${studentNo.lastN(4)}）',
           studentNo: result.studentNo,
           loginType: LoginType.password,
           credentialRef: Value(credentialRef),
@@ -140,7 +141,7 @@ class AccountsNotifier extends StateNotifier<AccountsState> {
       await _accountDao.insertAccount(
         AccountsCompanion.insert(
           id: id,
-          displayName: '${profile.studentName}（${profile.studentNo.substring(profile.studentNo.length - 4)}）',
+          displayName: '${profile.studentName}（${profile.studentNo.lastN(4)}）',
           studentNo: profile.studentNo,
           loginType: LoginType.cookie,
           cookieJarRef: cookieRef,
