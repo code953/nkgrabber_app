@@ -4,7 +4,6 @@
 /// Handles GBK decoding, RSA login, cookie management, and response parsing.
 library;
 
-import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -234,11 +233,67 @@ class CampusAdapterImpl implements CampusAdapter {
           body['msg']?.toString() ??
           body['message']?.toString();
 
+      if (!success && msg != null) {
+        // Map server messages to typed exceptions so RetryClassifier can act.
+        throw _mapSubmitMessage(msg);
+      }
+
       return SubmitResult(
         success: success,
         message: msg,
       );
     });
+  }
+
+  /// Map a submit failure message to a typed [CampusException].
+  CampusException _mapSubmitMessage(String msg) {
+    if (msg.contains('人数已满') || msg.contains('选课人数') || msg.contains('课程已满')) {
+      return CampusException(
+        message: msg,
+        type: CampusExceptionType.courseFull,
+      );
+    }
+    if (msg.contains('时间冲突') || msg.contains('课程冲突') || msg.contains('已选该课')) {
+      return CampusException(
+        message: msg,
+        type: CampusExceptionType.courseConflict,
+      );
+    }
+    if (msg.contains('选课批次') && (msg.contains('未开始') || msg.contains('已结束') || msg.contains('不在时间'))) {
+      return CampusException(
+        message: msg,
+        type: CampusExceptionType.batchClosed,
+      );
+    }
+    if (msg.contains('超出') && msg.contains('限制') || msg.contains('学分') && msg.contains('上限')) {
+      return CampusException(
+        message: msg,
+        type: CampusExceptionType.limitReached,
+      );
+    }
+    if (msg.contains('风控') || msg.contains('异常操作') || msg.contains('频繁')) {
+      return CampusException(
+        message: msg,
+        type: CampusExceptionType.riskControl,
+      );
+    }
+    if (msg.contains('参数') && msg.contains('错误') || msg.contains('非法')) {
+      return CampusException(
+        message: msg,
+        type: CampusExceptionType.parameterError,
+      );
+    }
+    if (msg.contains('登录') || msg.contains('会话') || msg.contains('过期')) {
+      return CampusException(
+        message: msg,
+        type: CampusExceptionType.sessionExpired,
+      );
+    }
+    // Unknown failure — treat as retryable.
+    return CampusException(
+      message: msg,
+      type: CampusExceptionType.unknownResponse,
+    );
   }
 
   @override
@@ -392,31 +447,19 @@ class HttpDate {
 /// Simple per-account serial request queue.
 ///
 /// Ensures that only one campus request runs at a time per account (§7.4).
+///
+/// Uses a promise chain so concurrent callers all enqueue behind the current
+/// tail rather than racing on [_last] after the previous task completes.
 class _RequestQueue {
-  Future<void>? _last;
+  Future<void> _last = Future.value();
 
-  Future<T> add<T>(Future<T> Function() task) async {
-    // Wait for the previous task to complete.
-    while (_last != null) {
-      try {
-        await _last;
-      } catch (_) {
-        // Ignore errors from previous tasks.
-      }
-    }
-
-    final completer = Completer<T>();
-    _last = completer.future.then<void>((_) {}).catchError((_) {});
-
-    try {
-      final result = await task();
-      completer.complete(result);
-      return result;
-    } catch (e, s) {
-      completer.completeError(e, s);
-      rethrow;
-    } finally {
-      _last = null;
-    }
+  Future<T> add<T>(Future<T> Function() task) {
+    // Chain onto the current tail. Each new caller captures the tail at the
+    // moment of enqueue and waits for it before running its own task.
+    final next = _last.then<T>((_) => task());
+    // Update the tail, swallowing errors so a failed task doesn't break
+    // subsequent callers waiting on the new tail.
+    _last = next.then<void>((_) {}).catchError((_) {});
+    return next;
   }
 }
