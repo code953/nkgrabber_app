@@ -151,7 +151,7 @@ class GrabberEngine {
         accountId: accountId,
         adapter: adapter,
         effectiveIntervalMs: _effectiveIntervalMs,
-        onTargetResult: (targetId, success, message) {
+        onTargetResult: (targetId, {required bool success, String? message}) {
           if (success) {
             completedTargets.add(targetId);
             _updateState(_state.copyWith(

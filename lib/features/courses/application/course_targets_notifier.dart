@@ -63,9 +63,9 @@ class CourseTargetsNotifier extends StateNotifier<CourseTargetsState> {
     required String xkid,
     required String xkms,
     required String kmh,
-    String? xbkid,
-    required String batchName,
     required String courseName,
+    required String batchName,
+    String? xbkid,
   }) async {
     try {
       // Check for duplicate.

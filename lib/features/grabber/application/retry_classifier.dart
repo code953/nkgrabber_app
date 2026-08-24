@@ -56,7 +56,12 @@ class RetryClassifier {
         case NetworkExceptionType.timeout:
         case NetworkExceptionType.noConnection:
           return RetryDecision.retry;
-        default:
+        case NetworkExceptionType.badRequest:
+        case NetworkExceptionType.conflict:
+        case NetworkExceptionType.rateLimited:
+        case NetworkExceptionType.serverError:
+        case NetworkExceptionType.cancelled:
+        case NetworkExceptionType.unknown:
           return RetryDecision.stopTask;
       }
     }
