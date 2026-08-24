@@ -6,6 +6,7 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:nkgrabber/app/router.dart';
 import 'package:nkgrabber/app/theme.dart';
 import 'package:nkgrabber/core/logging/app_logger.dart';
@@ -13,7 +14,7 @@ import 'package:nkgrabber/core/logging/app_logger.dart';
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialize logging system
+  // Initialize logging system.
   AppLogger.init();
 
   AppLogger('main').info('NKgrabber starting...');
@@ -25,14 +26,22 @@ void main() {
   );
 }
 
-class NKGrabberApp extends ConsumerWidget {
+class NKGrabberApp extends ConsumerStatefulWidget {
   const NKGrabberApp({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<NKGrabberApp> createState() => _NKGrabberAppState();
+}
+
+class _NKGrabberAppState extends ConsumerState<NKGrabberApp> {
+  // Hoist the router so it is not recreated on every build.
+  // A new GoRouter instance discards navigation state and resets the stack.
+  late final GoRouter _router = createRouter();
+
+  @override
+  Widget build(BuildContext context) {
     // TODO: Read theme mode from settings provider.
     const themeMode = AppThemeMode.system;
-    final router = createRouter();
 
     return MaterialApp.router(
       title: 'NKgrabber',
@@ -40,7 +49,7 @@ class NKGrabberApp extends ConsumerWidget {
       theme: AppTheme.lightTheme(themeMode),
       darkTheme: AppTheme.darkTheme(themeMode),
       themeMode: AppTheme.themeMode(themeMode),
-      routerConfig: router,
+      routerConfig: _router,
       locale: const Locale('zh', 'CN'),
       supportedLocales: const [
         Locale('zh', 'CN'),
@@ -49,3 +58,6 @@ class NKGrabberApp extends ConsumerWidget {
     );
   }
 }
+
+
+
