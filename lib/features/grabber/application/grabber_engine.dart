@@ -5,6 +5,7 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math';
 
 import 'package:drift/drift.dart';
@@ -132,9 +133,10 @@ class GrabberEngine {
     final failedTargets = <String>[];
 
     // Limit concurrent accounts.
-    final activeIds = accountTargets.keys
-        .take(_maxConcurrent)
-        .toList();
+    final activeIds = accountTargets.keys.take(_maxConcurrent).toList();
+
+    // Track task IDs for finalization.
+    final taskIds = <String, String>{};
 
     final futures = <Future<void>>[];
 
@@ -168,14 +170,15 @@ class GrabberEngine {
 
       _workers[accountId] = worker;
 
-      // Create a task record in the database.
+      // Create a task record in the database with JSON target list.
       final taskId = const Uuid().v4();
+      taskIds[accountId] = taskId;
       final targetIds = accountTargets[accountId]!.map((t) => t.id).toList();
       await _grabTaskDao.insertTask(
         GrabTasksCompanion.insert(
           id: taskId,
           accountId: accountId,
-          targetIdsJson: targetIds.join(','),
+          targetIdsJson: jsonEncode(targetIds),
           status: GrabTaskStatus.running,
           effectiveIntervalMs: _effectiveIntervalMs,
           startedAt: Value(DateTime.now().toUtc().toIso8601String()),
@@ -199,14 +202,40 @@ class GrabberEngine {
     _timeoutTimer = null;
     _workers.clear();
 
+    final finalStatus = _state.status == GrabberStatus.running
+        ? (completedTargets.length == totalTargets
+            ? GrabberStatus.success
+            : GrabberStatus.failed)
+        : _state.status; // Preserve stopped/interrupted/etc.
+
+    final finalMessage = finalStatus == GrabberStatus.success
+        ? '全部课程选课成功'
+        : '完成 ${completedTargets.length}/$totalTargets';
+
     if (_state.status == GrabberStatus.running) {
-      final allSuccess = completedTargets.length == totalTargets;
       _updateState(_state.copyWith(
-        status: allSuccess ? GrabberStatus.success : GrabberStatus.failed,
-        message: allSuccess
-            ? '全部课程选课成功'
-            : '完成 ${completedTargets.length}/$totalTargets',
+        status: finalStatus,
+        message: finalMessage,
       ));
+    }
+
+    // Finalize task records.
+    final stoppedAt = DateTime.now().toUtc().toIso8601String();
+    for (final accountId in activeIds) {
+      final taskId = taskIds[accountId];
+      if (taskId == null) continue;
+      await _grabTaskDao.updateTask(
+        GrabTasksCompanion(
+          id: Value(taskId),
+          status: Value(_grabTaskStatusFrom(finalStatus)),
+          stoppedAt: Value(stoppedAt),
+          lastResultJson: Value(jsonEncode({
+            'completed': completedTargets.length,
+            'failed': failedTargets.length,
+            'total': totalTargets,
+          })),
+        ),
+      );
     }
   }
 
@@ -272,6 +301,29 @@ class GrabberEngine {
       status: GrabberStatus.stopped,
       message: '已达到30分钟运行上限',
     ));
+  }
+
+  /// Map grabber status to a task DB status.
+  GrabTaskStatus _grabTaskStatusFrom(GrabberStatus status) {
+    switch (status) {
+      case GrabberStatus.success:
+        return GrabTaskStatus.success;
+      case GrabberStatus.failed:
+        return GrabTaskStatus.failed;
+      case GrabberStatus.stopped:
+        return GrabTaskStatus.stopped;
+      case GrabberStatus.interrupted:
+        return GrabTaskStatus.interrupted;
+      case GrabberStatus.authExpired:
+        return GrabTaskStatus.authExpired;
+      case GrabberStatus.captchaRequired:
+        return GrabTaskStatus.captchaRequired;
+      case GrabberStatus.idle:
+      case GrabberStatus.preparing:
+      case GrabberStatus.running:
+      case GrabberStatus.paused:
+        return GrabTaskStatus.stopped;
+    }
   }
 
   void _updateState(GrabberState newState) {
