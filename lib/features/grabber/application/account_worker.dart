@@ -16,10 +16,10 @@ import 'package:nkgrabber/infrastructure/database/app_database.dart';
 
 /// Callback for reporting target result.
 typedef TargetResultCallback = void Function(
-  String targetId,
-  bool success,
+  String targetId, {
+  required bool success,
   String? message,
-);
+});
 
 /// A worker that processes targets for a single account.
 class AccountWorker {
@@ -71,7 +71,7 @@ class AccountWorker {
       final xkms = batchTargets.first.xkms;
       if (XkmsMode.fromCode(xkms) == null) {
         for (final t in batchTargets) {
-          onTargetResult(t.id, false, '无法识别的选课模式，请等待客户端升级');
+          onTargetResult(t.id, success: false, message: '无法识别的选课模式，请等待客户端升级');
         }
         continue;
       }
@@ -121,7 +121,7 @@ class AccountWorker {
 
         if (result.success) {
           for (final t in chunk) {
-            onTargetResult(t.id, true, result.message);
+            onTargetResult(t.id, success: true, message: result.message);
           }
           return null; // Chunk done.
         }
@@ -142,7 +142,7 @@ class AccountWorker {
             return RetryDecision.stopTask;
           case RetryDecision.skipTarget:
             for (final t in chunk) {
-              onTargetResult(t.id, false, e.toString());
+              onTargetResult(t.id, success: false, message: e.toString());
             }
             return null; // Skip to next chunk.
           case RetryDecision.retry:
@@ -181,7 +181,7 @@ class AccountWorker {
             _logger.info(
               '[$accountId] Target ${target.courseName} already selected',
             );
-            onTargetResult(target.id, true, '已选中（幂等检查）');
+            onTargetResult(target.id, success: true, message: '已选中（幂等检查）');
           } else {
             remaining.add(target);
           }
