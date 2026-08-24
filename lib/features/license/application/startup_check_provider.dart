@@ -93,18 +93,26 @@ class StartupChecker {
     AppConfigDto? config;
     LatestReleaseDto? release;
     try {
+      // Use Future.wait with per-future error handling so a failed fetchConfig
+      // doesn't silently discard a successful checkUpdate (and vice versa).
       final results = await Future.wait<dynamic>(
         [
-          _backendRepo.fetchConfig(
-            platform: _platform,
-            appVersion: _appVersion,
-          ),
-          _backendRepo.checkUpdate(
-            platform: _platform,
-            arch: _getArch(),
-            currentVersion: _appVersion,
-            channel: 'stable',
-          ),
+          _backendRepo
+              .fetchConfig(
+                platform: _platform,
+                appVersion: _appVersion,
+              )
+              .then<AppConfigDto?>((v) => v)
+              .catchError((Object _) => null),
+          _backendRepo
+              .checkUpdate(
+                platform: _platform,
+                arch: _getArch(),
+                currentVersion: _appVersion,
+                channel: 'stable',
+              )
+              .then<LatestReleaseDto?>((v) => v)
+              .catchError((Object _) => null),
         ],
       ).timeout(AppConstants.startupCheckTimeout);
 
