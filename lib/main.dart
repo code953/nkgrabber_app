@@ -13,6 +13,7 @@ import 'package:nkgrabber/app/router.dart';
 import 'package:nkgrabber/app/theme.dart';
 import 'package:nkgrabber/core/logging/app_logger.dart';
 import 'package:nkgrabber/core/logging/log_sanitizer.dart';
+import 'package:nkgrabber/l10n/app_localizations.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -69,8 +70,14 @@ class _NKGrabberAppState extends ConsumerState<NKGrabberApp> {
       darkTheme: AppTheme.darkTheme(themeMode),
       themeMode: AppTheme.themeMode(themeMode),
       routerConfig: _router,
-      locale: const Locale('zh', 'CN'),
-      supportedLocales: const [Locale('zh', 'CN'), Locale('en', 'US')],
+      // These delegates are not optional. Without them the only
+      // MaterialLocalizations on offer is DefaultMaterialLocalizations,
+      // which supports 'en' alone — so forcing a zh locale leaves
+      // NavigationRail/NavigationBar with no localizations at all.
+      // `S` bundles its own delegate plus the three Global* ones.
+      localizationsDelegates: S.localizationsDelegates,
+      supportedLocales: S.supportedLocales,
+      locale: const Locale('zh'),
     );
   }
 }

@@ -1,5 +1,7 @@
 import 'dart:math';
 
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nkgrabber/core/errors/app_exception.dart';
 import 'package:nkgrabber/core/logging/log_sanitizer.dart';
@@ -11,6 +13,8 @@ import 'package:nkgrabber/infrastructure/campus/clock_sync.dart';
 import 'package:nkgrabber/infrastructure/campus/xkms_enum.dart';
 import 'package:nkgrabber/infrastructure/database/tables/accounts.dart';
 import 'package:nkgrabber/infrastructure/database/tables/grab_tasks.dart';
+import 'package:nkgrabber/l10n/app_localizations.dart';
+import 'package:nkgrabber/main.dart' show NKGrabberApp;
 
 void main() {
   // ═══════════════════════════════════════════════════════════════════════
@@ -397,6 +401,38 @@ void main() {
         ),
         AppConstants.defaultUserIntervalMs,
       );
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // App shell — regression guard for localization wiring
+  // ═══════════════════════════════════════════════════════════════════════
+  group('NKGrabberApp', () {
+    testWidgets('boots straight into the accounts page', (tester) async {
+      await tester.pumpWidget(const ProviderScope(child: NKGrabberApp()));
+      await tester.pumpAndSettle();
+
+      expect(find.text('账号管理'), findsOneWidget);
+    });
+
+    testWidgets('provides MaterialLocalizations under the zh locale', (
+      tester,
+    ) async {
+      await tester.pumpWidget(const ProviderScope(child: NKGrabberApp()));
+      await tester.pumpAndSettle();
+
+      // The 800x600 default surface takes the desktop branch, so this is the
+      // NavigationRail that threw "No MaterialLocalizations found" while
+      // `localizationsDelegates` was left unset: it calls
+      // MaterialLocalizations.of() during build, and the implicit
+      // DefaultMaterialLocalizations covers 'en' only.
+      final rail = find.byType(NavigationRail);
+      expect(rail, findsOneWidget);
+
+      final context = tester.element(rail);
+      expect(Localizations.localeOf(context).languageCode, 'zh');
+      expect(MaterialLocalizations.of(context), isNotNull);
+      expect(S.of(context), isNotNull);
     });
   });
 }

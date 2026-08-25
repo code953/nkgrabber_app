@@ -64,6 +64,7 @@ lib/
 - **Grabber state machine**: `idle → preparing → running → success/paused/stopped/interrupted/captchaRequired/failed`. No auto-recovery after `interrupted`. 30-minute hard timeout.
 - **effectiveIntervalMs = max(userIntervalMs, settings.minRequestIntervalMs)** — jitter is upward only, never below the floor. Both values come from `app_settings`.
 - **xkms validation**: unknown values (`!= "1"|"2"|"3"`) → mark target `failed`, never submit with a default.
+- **Localization delegates are mandatory**: `MaterialApp.router` forces `locale: Locale('zh')`, and the implicit `DefaultMaterialLocalizations` supports `en` only. `localizationsDelegates: S.localizationsDelegates` (which bundles the three `Global*` delegates) must stay wired, or every Material widget that calls `MaterialLocalizations.of()` — `NavigationRail`, `NavigationBar`, `Scaffold` drawers — throws at build time. Keep `supportedLocales: S.supportedLocales` so it tracks the `.arb` files.
 
 ## Database Schema (Drift, schemaVersion=3)
 
@@ -109,8 +110,12 @@ Tests live in `test/widget_test.dart`. The suite covers:
 - `RetryClassifier` (decision cases)
 - `ClockSyncStatus` (`campusNow` offset in both directions)
 - Interval calculation (`max(userIntervalMs, minRequestIntervalMs)`)
+- `NKGrabberApp` boot (widget test): the app reaches the accounts page and
+  `MaterialLocalizations` / `S` resolve under the forced `zh` locale
 
-Run with `flutter test`. All 42 tests must pass before committing. There are still no widget tests.
+Run with `flutter test`. All 44 tests must pass before committing. The two
+`NKGrabberApp` cases are the only widget tests; every page is still a stub, so
+there is no coverage of user interaction.
 
 ## CI/CD
 
