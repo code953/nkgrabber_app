@@ -12,24 +12,6 @@ class SEn extends S {
   String get appTitle => 'NKgrabber';
 
   @override
-  String get startupLoading => 'Loading...';
-
-  @override
-  String get activationTitle => 'Activate License';
-
-  @override
-  String get activationHint => 'Enter activation code';
-
-  @override
-  String get activationButton => 'Activate';
-
-  @override
-  String get activationSuccess => 'Activation successful';
-
-  @override
-  String get activationFormatError => 'Invalid format. Use XXXX-XXXX-XXXX-XXXX';
-
-  @override
   String get navAccounts => 'Accounts';
 
   @override
@@ -146,9 +128,6 @@ class SEn extends S {
   String get grabberStateInterrupted => 'Interrupted';
 
   @override
-  String get grabberStateAuthExpired => 'Auth Expired';
-
-  @override
   String get grabberStateCaptcha => 'Captcha Required';
 
   @override
@@ -202,28 +181,6 @@ class SEn extends S {
       'Data will be sanitized before export. Please review after export.';
 
   @override
-  String get settingsUnbind => 'Unbind Device';
-
-  @override
-  String get settingsUnbindConfirm =>
-      'Confirm unbind? Cannot rebind for 24 hours.';
-
-  @override
-  String settingsUnbindCooldown(String time) {
-    return 'Cooling down, can rebind after $time';
-  }
-
-  @override
-  String get maintenanceTitle => 'Under Maintenance';
-
-  @override
-  String get maintenanceMessage =>
-      'System is under maintenance, please try again later';
-
-  @override
-  String get versionTooLow => 'Version too old, please update to continue';
-
-  @override
   String get errorNetwork => 'Network error, please check connection';
 
   @override
@@ -234,15 +191,6 @@ class SEn extends S {
 
   @override
   String get errorUnknown => 'Unknown error';
-
-  @override
-  String get errorTokenInvalid => 'Authorization invalid, please re-activate';
-
-  @override
-  String get errorLicenseExpired => 'License expired';
-
-  @override
-  String get errorDeviceLimit => 'Activation code bound to another device';
 
   @override
   String get errorRateLimited => 'Rate limited, please try later';

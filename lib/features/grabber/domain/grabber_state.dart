@@ -8,7 +8,7 @@ enum GrabberStatus {
   /// No task running.
   idle,
 
-  /// Validating license, checking prerequisites.
+  /// Checking prerequisites before submitting.
   preparing,
 
   /// Actively submitting course selections.
@@ -25,9 +25,6 @@ enum GrabberStatus {
 
   /// App crashed or was killed during a task.
   interrupted,
-
-  /// License validation failed during task.
-  authExpired,
 
   /// Campus system requires captcha.
   captchaRequired,
@@ -70,8 +67,7 @@ class GrabberState {
       status == GrabberStatus.success ||
       status == GrabberStatus.failed ||
       status == GrabberStatus.stopped ||
-      status == GrabberStatus.interrupted ||
-      status == GrabberStatus.authExpired;
+      status == GrabberStatus.interrupted;
 
   GrabberState copyWith({
     GrabberStatus? status,

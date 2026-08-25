@@ -66,10 +66,6 @@ class RetryClassifier {
       }
     }
 
-    if (error is AuthException) {
-      return RetryDecision.stopTask;
-    }
-
     // Unknown errors — retry once, then skip.
     return RetryDecision.retry;
   }

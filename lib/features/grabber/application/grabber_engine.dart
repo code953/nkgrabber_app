@@ -14,7 +14,6 @@ import 'package:nkgrabber/core/utils/constants.dart';
 import 'package:nkgrabber/features/grabber/application/account_worker.dart';
 import 'package:nkgrabber/features/grabber/application/retry_classifier.dart';
 import 'package:nkgrabber/features/grabber/domain/grabber_state.dart';
-import 'package:nkgrabber/infrastructure/backend/backend_repository.dart';
 import 'package:nkgrabber/infrastructure/campus/campus_adapter.dart';
 import 'package:nkgrabber/infrastructure/database/app_database.dart';
 import 'package:nkgrabber/infrastructure/database/daos/course_target_dao.dart';
@@ -28,32 +27,23 @@ typedef AdapterResolver = CampusAdapter? Function(String accountId);
 /// The main grabber engine.
 class GrabberEngine {
   GrabberEngine({
-    required BackendRepository backendRepository,
     required CourseTargetDao courseTargetDao,
     required GrabTaskDao grabTaskDao,
     required AdapterResolver adapterResolver,
     required int maxConcurrentAccounts,
     required int planMinIntervalMs,
     required int userIntervalMs,
-    required String installId,
-    required String appVersion,
-  })  : _backendRepo = backendRepository,
-        _courseTargetDao = courseTargetDao,
+  })  : _courseTargetDao = courseTargetDao,
         _grabTaskDao = grabTaskDao,
         _adapterResolver = adapterResolver,
         _maxConcurrent = maxConcurrentAccounts,
-        _effectiveIntervalMs = max(userIntervalMs, planMinIntervalMs),
-        _installId = installId,
-        _appVersion = appVersion;
+        _effectiveIntervalMs = max(userIntervalMs, planMinIntervalMs);
 
-  final BackendRepository _backendRepo;
   final CourseTargetDao _courseTargetDao;
   final GrabTaskDao _grabTaskDao;
   final AdapterResolver _adapterResolver;
   final int _maxConcurrent;
   final int _effectiveIntervalMs;
-  final String _installId;
-  final String _appVersion;
 
   final _logger = AppLogger('GrabberEngine');
   final _workers = <String, AccountWorker>{};
@@ -81,23 +71,7 @@ class GrabberEngine {
       activeAccountIds: accountIds,
     ));
 
-    // Step 1: Validate license online.
-    try {
-      await _backendRepo.validateLicense(
-        installId: _installId,
-        appVersion: _appVersion,
-      );
-      // License valid — continue.
-      _logger.info('License validated for grabber start');
-    } on Exception catch (e) {
-      _updateState(_state.copyWith(
-        status: GrabberStatus.authExpired,
-        message: '授权验证失败: $e',
-      ));
-      return;
-    }
-
-    // Step 2: Gather targets per account.
+    // Step 1: Gather targets per account.
     final accountTargets = <String, List<CourseTargetEntry>>{};
     var totalTargets = 0;
 
@@ -122,13 +96,13 @@ class GrabberEngine {
       totalTargets: totalTargets,
     ));
 
-    // Step 3: Start 30-minute timeout timer.
+    // Step 2: Start 30-minute timeout timer.
     _timeoutTimer = Timer(
       const Duration(minutes: AppConstants.maxGrabTaskRuntimeMinutes),
       _onTimeout,
     );
 
-    // Step 4: Create task records and launch workers.
+    // Step 3: Create task records and launch workers.
     final completedTargets = <String>[];
     final failedTargets = <String>[];
 
@@ -314,8 +288,6 @@ class GrabberEngine {
         return GrabTaskStatus.stopped;
       case GrabberStatus.interrupted:
         return GrabTaskStatus.interrupted;
-      case GrabberStatus.authExpired:
-        return GrabTaskStatus.authExpired;
       case GrabberStatus.captchaRequired:
         return GrabTaskStatus.captchaRequired;
       case GrabberStatus.idle:

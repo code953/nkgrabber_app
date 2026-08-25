@@ -1,7 +1,6 @@
 /// Settings page.
 ///
-/// Provides UI for theme switching, request interval, diagnostics export,
-/// and license unbind.
+/// Provides UI for theme switching, request interval, and diagnostics export.
 library;
 
 import 'package:flutter/material.dart';
@@ -30,17 +29,6 @@ class SettingsPage extends StatelessWidget {
             subtitle: const Text('最近3次任务日志（已脱敏）'),
             onTap: () {
               // TODO: Export diagnostics.
-            },
-          ),
-          const Divider(),
-          const _SectionHeader(title: '授权'),
-          const _LicenseStatusTile(),
-          ListTile(
-            leading: const Icon(Icons.link_off),
-            title: const Text('解绑设备'),
-            subtitle: const Text('解绑后需重新激活'),
-            onTap: () {
-              // TODO: Confirm and deactivate.
             },
           ),
           const Divider(),
@@ -160,20 +148,6 @@ class _IntervalSettingState extends State<_IntervalSetting> {
           },
         ),
       ),
-    );
-  }
-}
-
-class _LicenseStatusTile extends StatelessWidget {
-  const _LicenseStatusTile();
-
-  @override
-  Widget build(BuildContext context) {
-    // TODO: Wire to LicenseNotifier.
-    return const ListTile(
-      leading: Icon(Icons.verified_outlined),
-      title: Text('授权状态'),
-      subtitle: Text('未激活'),
     );
   }
 }

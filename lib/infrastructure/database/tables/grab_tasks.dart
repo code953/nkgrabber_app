@@ -17,7 +17,6 @@ enum GrabTaskStatus {
   success,
   failed,
   interrupted,
-  authExpired,
   captchaRequired,
 }
 

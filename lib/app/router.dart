@@ -1,23 +1,20 @@
 /// Application routing configuration using GoRouter.
 ///
-/// Defines all routes and redirect guards for auth state.
+/// The app runs fully offline against the campus system, so there is no
+/// startup gate or activation flow — the account list is the entry point.
 library;
 
 import 'package:go_router/go_router.dart';
 import 'package:nkgrabber/app/shell_page.dart';
-import 'package:nkgrabber/app/startup_page.dart';
 import 'package:nkgrabber/features/accounts/presentation/accounts_page.dart';
 import 'package:nkgrabber/features/courses/presentation/course_config_page.dart';
 import 'package:nkgrabber/features/grabber/presentation/grabber_page.dart';
-import 'package:nkgrabber/features/license/presentation/activation_page.dart';
 import 'package:nkgrabber/features/settings/presentation/settings_page.dart';
 
 /// Route path constants.
 class AppRoutes {
   const AppRoutes._();
 
-  static const startup = '/startup';
-  static const activation = '/activation';
   static const home = '/home';
   static const accounts = '/home/accounts';
   static const addAccount = '/home/accounts/add';
@@ -29,16 +26,8 @@ class AppRoutes {
 /// Create the app router.
 GoRouter createRouter() {
   return GoRouter(
-    initialLocation: AppRoutes.startup,
+    initialLocation: AppRoutes.accounts,
     routes: [
-      GoRoute(
-        path: AppRoutes.startup,
-        builder: (context, state) => const StartupPage(),
-      ),
-      GoRoute(
-        path: AppRoutes.activation,
-        builder: (context, state) => const ActivationPage(),
-      ),
       ShellRoute(
         builder: (context, state, child) => ShellPage(child: child),
         routes: [

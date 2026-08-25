@@ -159,7 +159,6 @@ class _StatusHeader extends StatelessWidget {
       GrabberStatus.paused => (Icons.pause_circle, '已暂停', Colors.amber),
       GrabberStatus.stopped => (Icons.stop_circle, '已停止', Colors.grey),
       GrabberStatus.interrupted => (Icons.warning, '异常中断', Colors.red),
-      GrabberStatus.authExpired => (Icons.lock, '授权失效', Colors.red),
       GrabberStatus.captchaRequired => (
           Icons.security,
           '需要验证码',

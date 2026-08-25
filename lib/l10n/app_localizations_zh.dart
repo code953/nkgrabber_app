@@ -12,24 +12,6 @@ class SZh extends S {
   String get appTitle => 'NKgrabber';
 
   @override
-  String get startupLoading => '正在加载...';
-
-  @override
-  String get activationTitle => '激活授权';
-
-  @override
-  String get activationHint => '请输入激活码';
-
-  @override
-  String get activationButton => '激活';
-
-  @override
-  String get activationSuccess => '激活成功';
-
-  @override
-  String get activationFormatError => '激活码格式错误，请输入 XXXX-XXXX-XXXX-XXXX 格式';
-
-  @override
   String get navAccounts => '账号';
 
   @override
@@ -146,9 +128,6 @@ class SZh extends S {
   String get grabberStateInterrupted => '异常中断';
 
   @override
-  String get grabberStateAuthExpired => '授权失效';
-
-  @override
   String get grabberStateCaptcha => '需要验证码';
 
   @override
@@ -199,26 +178,6 @@ class SZh extends S {
   String get settingsDiagnosticsHint => '导出前将强制脱敏，请导出后自行复核';
 
   @override
-  String get settingsUnbind => '解绑设备';
-
-  @override
-  String get settingsUnbindConfirm => '确认解绑？解绑后 24 小时内无法绑定新设备。';
-
-  @override
-  String settingsUnbindCooldown(String time) {
-    return '冷却中，$time 后可重新绑定';
-  }
-
-  @override
-  String get maintenanceTitle => '系统维护中';
-
-  @override
-  String get maintenanceMessage => '系统正在维护，请稍后重试';
-
-  @override
-  String get versionTooLow => '当前版本过低，请更新后继续使用';
-
-  @override
   String get errorNetwork => '网络连接失败，请检查网络';
 
   @override
@@ -229,15 +188,6 @@ class SZh extends S {
 
   @override
   String get errorUnknown => '未知错误';
-
-  @override
-  String get errorTokenInvalid => '授权失效，请重新激活';
-
-  @override
-  String get errorLicenseExpired => '授权已过期';
-
-  @override
-  String get errorDeviceLimit => '激活码已绑定其他设备';
 
   @override
   String get errorRateLimited => '请求过于频繁，请稍后重试';

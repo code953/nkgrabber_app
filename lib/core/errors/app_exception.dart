@@ -37,29 +37,6 @@ enum NetworkExceptionType {
   unknown,
 }
 
-// -- Auth / License errors ---------------------------------------------------
-
-class AuthException extends AppException {
-  const AuthException({
-    required super.message,
-    required this.type,
-    super.originalError,
-  });
-
-  final AuthExceptionType type;
-}
-
-enum AuthExceptionType {
-  tokenInvalid,
-  licenseInactive,
-  licenseExpired,
-  deviceLimitReached,
-  unbindCooldown,
-  forbidden,
-  rateLimited,
-  validationError,
-}
-
 // -- Campus (school system) errors -------------------------------------------
 
 class CampusException extends AppException {
@@ -103,26 +80,6 @@ enum StorageExceptionType {
   writeFailed,
   deleteFailed,
   unavailable,
-}
-
-// -- Maintenance / version errors --------------------------------------------
-
-class MaintenanceException extends AppException {
-  const MaintenanceException({
-    required super.message,
-    this.maintenanceMessage,
-  });
-
-  final String? maintenanceMessage;
-}
-
-class VersionTooLowException extends AppException {
-  const VersionTooLowException({
-    required super.message,
-    required this.minimumVersion,
-  });
-
-  final String minimumVersion;
 }
 
 // -- Unknown -----------------------------------------------------------------

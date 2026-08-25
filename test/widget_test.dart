@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nkgrabber/core/errors/app_exception.dart';
 import 'package:nkgrabber/core/logging/log_sanitizer.dart';
@@ -5,8 +7,6 @@ import 'package:nkgrabber/core/utils/constants.dart';
 import 'package:nkgrabber/core/utils/extensions.dart';
 import 'package:nkgrabber/features/grabber/application/retry_classifier.dart';
 import 'package:nkgrabber/features/grabber/domain/grabber_state.dart';
-import 'package:nkgrabber/infrastructure/backend/dtos/app_config_dto.dart';
-import 'package:nkgrabber/infrastructure/backend/dtos/license_activation_dto.dart';
 import 'package:nkgrabber/infrastructure/campus/clock_sync.dart';
 import 'package:nkgrabber/infrastructure/campus/xkms_enum.dart';
 import 'package:nkgrabber/infrastructure/database/tables/accounts.dart';
@@ -26,15 +26,6 @@ void main() {
       expect(exception.type, NetworkExceptionType.timeout);
     });
 
-    test('AuthException carries type and message', () {
-      const exception = AuthException(
-        message: 'Token expired',
-        type: AuthExceptionType.tokenInvalid,
-      );
-      expect(exception.message, 'Token expired');
-      expect(exception.type, AuthExceptionType.tokenInvalid);
-    });
-
     test('CampusException carries type and message', () {
       const exception = CampusException(
         message: 'Session expired',
@@ -42,22 +33,6 @@ void main() {
       );
       expect(exception.message, 'Session expired');
       expect(exception.type, CampusExceptionType.sessionExpired);
-    });
-
-    test('MaintenanceException carries maintenance message', () {
-      const exception = MaintenanceException(
-        message: 'Server down',
-        maintenanceMessage: '系统维护中',
-      );
-      expect(exception.maintenanceMessage, '系统维护中');
-    });
-
-    test('VersionTooLowException carries minimum version', () {
-      const exception = VersionTooLowException(
-        message: 'Update needed',
-        minimumVersion: '2.0.0',
-      );
-      expect(exception.minimumVersion, '2.0.0');
     });
 
     test('toString includes message', () {
@@ -135,40 +110,11 @@ void main() {
   // Constants & Regex
   // ═══════════════════════════════════════════════════════════════════════
   group('AppConstants', () {
-    test('activation code regex matches valid codes', () {
-      expect(
-        AppConstants.activationCodeRegex.hasMatch('ABCD-1234-EFGH-5678'),
-        isTrue,
-      );
-      expect(
-        AppConstants.activationCodeRegex.hasMatch('A1B2-C3D4-E5F6-G7H8'),
-        isTrue,
-      );
-    });
-
-    test('activation code regex rejects invalid codes', () {
-      expect(
-        AppConstants.activationCodeRegex.hasMatch('ABCD-1234-EFGH'),
-        isFalse,
-      );
-      expect(
-        AppConstants.activationCodeRegex.hasMatch('abcd-1234-efgh-5678'),
-        isFalse,
-      );
-      expect(
-        AppConstants.activationCodeRegex.hasMatch('ABCD1234EFGH5678'),
-        isFalse,
-      );
-    });
-
-    test('backend URLs are well-formed', () {
-      expect(Uri.tryParse(AppConstants.backendBaseUrl), isNotNull);
+    test('campus URL is well-formed', () {
       expect(Uri.tryParse(AppConstants.campusBaseUrl), isNotNull);
     });
 
     test('timeouts are reasonable', () {
-      expect(AppConstants.backendConnectTimeout.inSeconds, 5);
-      expect(AppConstants.backendReceiveTimeout.inSeconds, 10);
       expect(AppConstants.maxGrabTaskRuntimeMinutes, 30);
     });
   });
@@ -214,8 +160,12 @@ void main() {
   });
 
   group('GrabTaskStatus enum', () {
-    test('has all 10 states', () {
-      expect(GrabTaskStatus.values.length, 10);
+    test('has all 9 states with no license-related state', () {
+      expect(GrabTaskStatus.values.length, 9);
+      expect(
+        GrabTaskStatus.values.map((e) => e.name),
+        isNot(contains('authExpired')),
+      );
     });
   });
 
@@ -279,7 +229,6 @@ void main() {
         GrabberStatus.failed,
         GrabberStatus.stopped,
         GrabberStatus.interrupted,
-        GrabberStatus.authExpired,
       ]) {
         expect(
           GrabberState(status: status).isTerminal,
@@ -382,18 +331,6 @@ void main() {
       );
     });
 
-    test('AuthException → stopTask', () {
-      expect(
-        RetryClassifier.classify(
-          const AuthException(
-            message: 'invalid',
-            type: AuthExceptionType.tokenInvalid,
-          ),
-        ),
-        RetryDecision.stopTask,
-      );
-    });
-
     test('unknown error → retry', () {
       expect(
         RetryClassifier.classify(Exception('random')),
@@ -406,78 +343,22 @@ void main() {
   // Clock Sync
   // ═══════════════════════════════════════════════════════════════════════
   group('ClockSyncStatus', () {
-    test('drift within threshold is not excessive', () {
-      const status = ClockSyncStatus(
-        campusOffsetMs: 1000,
-        serverOffsetMs: 500,
-      );
-      expect(status.driftMs, 500);
-      expect(status.isDriftExcessive, isFalse);
-    });
-
-    test('drift > 60s is excessive', () {
-      const status = ClockSyncStatus(
-        campusOffsetMs: 70000,
-        serverOffsetMs: 0,
-      );
-      expect(status.isDriftExcessive, isTrue);
-    });
-
-    test('server offset > 10min is excessive', () {
-      const status = ClockSyncStatus(
-        campusOffsetMs: 0,
-        serverOffsetMs: 11 * 60 * 1000,
-      );
-      expect(status.isServerOffsetExcessive, isTrue);
-    });
-
-    test('campusNow adjusts for offset', () {
-      const status = ClockSyncStatus(
-        campusOffsetMs: 5000,
-        serverOffsetMs: 0,
-      );
+    test('campusNow adjusts forward for a positive offset', () {
+      const status = ClockSyncStatus(campusOffsetMs: 5000);
       final now = DateTime.now().toUtc();
-      final campusNow = status.campusNow;
       expect(
-        campusNow.difference(now).inMilliseconds,
+        status.campusNow.difference(now).inMilliseconds,
         greaterThan(4000),
       );
     });
-  });
 
-  // ═══════════════════════════════════════════════════════════════════════
-  // DTOs
-  // ═══════════════════════════════════════════════════════════════════════
-  group('DTOs', () {
-    test('AppConfigDto fromJson parses maintenance fields', () {
-      final dto = AppConfigDto.fromJson({
-        'maintenance': true,
-        'maintenanceMessage': '维护中',
-        'minimumSupportedVersion': '1.0.0',
-        'supportUrl': 'https://example.com',
-      });
-      expect(dto.maintenance, isTrue);
-      expect(dto.maintenanceMessage, '维护中');
-      expect(dto.minimumSupportedVersion, '1.0.0');
-    });
-
-    test('AppConfigDto fromJson defaults', () {
-      final dto = AppConfigDto.fromJson({});
-      expect(dto.maintenance, isFalse);
-      expect(dto.minimumSupportedVersion, '0.0.0');
-    });
-
-    test('PlanDto fromJson with defaults', () {
-      final dto = PlanDto.fromJson({
-        'id': 'free',
-        'name': 'Free',
-        'maxAccounts': 1,
-        'minRequestIntervalMs': 2000,
-        'maxConcurrentAccounts': 1,
-        'licenseDurationDays': 30,
-      });
-      expect(dto.maxDevices, 1);
-      expect(dto.unbindCooldownHours, 24);
+    test('campusNow adjusts backward for a negative offset', () {
+      const status = ClockSyncStatus(campusOffsetMs: -5000);
+      final now = DateTime.now().toUtc();
+      expect(
+        status.campusNow.difference(now).inMilliseconds,
+        lessThan(-4000),
+      );
     });
   });
 
@@ -485,16 +366,16 @@ void main() {
   // Interval calculation
   // ═══════════════════════════════════════════════════════════════════════
   group('Interval calculation', () {
-    test('effective interval is max of user and plan', () {
-      final effective = [1000, 2000].reduce((a, b) => a > b ? a : b);
-      expect(effective, 2000);
+    test('effective interval is max of user and floor', () {
+      expect(max(1000, 2000), 2000);
     });
 
-    test('user interval below plan minimum is clamped', () {
-      const userMs = 500;
-      const planMinMs = 1000;
-      const effective = userMs > planMinMs ? userMs : planMinMs;
-      expect(effective, 1000);
+    test('user interval below the floor is clamped up', () {
+      expect(max(500, 1000), 1000);
+    });
+
+    test('user interval above the floor is respected', () {
+      expect(max(3000, 800), 3000);
     });
   });
 }

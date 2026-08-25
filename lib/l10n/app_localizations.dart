@@ -103,42 +103,6 @@ abstract class S {
   /// **'NKgrabber'**
   String get appTitle;
 
-  /// No description provided for @startupLoading.
-  ///
-  /// In zh, this message translates to:
-  /// **'正在加载...'**
-  String get startupLoading;
-
-  /// No description provided for @activationTitle.
-  ///
-  /// In zh, this message translates to:
-  /// **'激活授权'**
-  String get activationTitle;
-
-  /// No description provided for @activationHint.
-  ///
-  /// In zh, this message translates to:
-  /// **'请输入激活码'**
-  String get activationHint;
-
-  /// No description provided for @activationButton.
-  ///
-  /// In zh, this message translates to:
-  /// **'激活'**
-  String get activationButton;
-
-  /// No description provided for @activationSuccess.
-  ///
-  /// In zh, this message translates to:
-  /// **'激活成功'**
-  String get activationSuccess;
-
-  /// No description provided for @activationFormatError.
-  ///
-  /// In zh, this message translates to:
-  /// **'激活码格式错误，请输入 XXXX-XXXX-XXXX-XXXX 格式'**
-  String get activationFormatError;
-
   /// No description provided for @navAccounts.
   ///
   /// In zh, this message translates to:
@@ -367,12 +331,6 @@ abstract class S {
   /// **'异常中断'**
   String get grabberStateInterrupted;
 
-  /// No description provided for @grabberStateAuthExpired.
-  ///
-  /// In zh, this message translates to:
-  /// **'授权失效'**
-  String get grabberStateAuthExpired;
-
   /// No description provided for @grabberStateCaptcha.
   ///
   /// In zh, this message translates to:
@@ -469,42 +427,6 @@ abstract class S {
   /// **'导出前将强制脱敏，请导出后自行复核'**
   String get settingsDiagnosticsHint;
 
-  /// No description provided for @settingsUnbind.
-  ///
-  /// In zh, this message translates to:
-  /// **'解绑设备'**
-  String get settingsUnbind;
-
-  /// No description provided for @settingsUnbindConfirm.
-  ///
-  /// In zh, this message translates to:
-  /// **'确认解绑？解绑后 24 小时内无法绑定新设备。'**
-  String get settingsUnbindConfirm;
-
-  /// No description provided for @settingsUnbindCooldown.
-  ///
-  /// In zh, this message translates to:
-  /// **'冷却中，{time} 后可重新绑定'**
-  String settingsUnbindCooldown(String time);
-
-  /// No description provided for @maintenanceTitle.
-  ///
-  /// In zh, this message translates to:
-  /// **'系统维护中'**
-  String get maintenanceTitle;
-
-  /// No description provided for @maintenanceMessage.
-  ///
-  /// In zh, this message translates to:
-  /// **'系统正在维护，请稍后重试'**
-  String get maintenanceMessage;
-
-  /// No description provided for @versionTooLow.
-  ///
-  /// In zh, this message translates to:
-  /// **'当前版本过低，请更新后继续使用'**
-  String get versionTooLow;
-
   /// No description provided for @errorNetwork.
   ///
   /// In zh, this message translates to:
@@ -528,24 +450,6 @@ abstract class S {
   /// In zh, this message translates to:
   /// **'未知错误'**
   String get errorUnknown;
-
-  /// No description provided for @errorTokenInvalid.
-  ///
-  /// In zh, this message translates to:
-  /// **'授权失效，请重新激活'**
-  String get errorTokenInvalid;
-
-  /// No description provided for @errorLicenseExpired.
-  ///
-  /// In zh, this message translates to:
-  /// **'授权已过期'**
-  String get errorLicenseExpired;
-
-  /// No description provided for @errorDeviceLimit.
-  ///
-  /// In zh, this message translates to:
-  /// **'激活码已绑定其他设备'**
-  String get errorDeviceLimit;
 
   /// No description provided for @errorRateLimited.
   ///
