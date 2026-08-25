@@ -1,7 +1,7 @@
 /// Settings page.
 ///
 /// Provides UI for theme switching, request interval, diagnostics export,
-/// crash reporting toggle, license unbind, and update checking.
+/// license unbind, and update checking.
 library;
 
 import 'package:flutter/material.dart';
@@ -30,15 +30,6 @@ class SettingsPage extends StatelessWidget {
             subtitle: const Text('最近3次任务日志（已脱敏）'),
             onTap: () {
               // TODO: Export diagnostics.
-            },
-          ),
-          SwitchListTile(
-            secondary: const Icon(Icons.cloud_upload_outlined),
-            title: const Text('崩溃上报'),
-            subtitle: const Text('帮助改进应用稳定性'),
-            value: true, // TODO: Read from settings.
-            onChanged: (v) {
-              // TODO: Update crash reporting setting.
             },
           ),
           const Divider(),

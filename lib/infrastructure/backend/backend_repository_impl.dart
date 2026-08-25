@@ -6,10 +6,8 @@ library;
 
 import 'package:dio/dio.dart';
 import 'package:nkgrabber/core/errors/app_exception.dart';
-import 'package:nkgrabber/core/logging/app_logger.dart';
 import 'package:nkgrabber/infrastructure/backend/backend_repository.dart';
 import 'package:nkgrabber/infrastructure/backend/dtos/app_config_dto.dart';
-import 'package:nkgrabber/infrastructure/backend/dtos/crash_report_dto.dart';
 import 'package:nkgrabber/infrastructure/backend/dtos/latest_release_dto.dart';
 import 'package:nkgrabber/infrastructure/backend/dtos/license_activation_dto.dart';
 import 'package:nkgrabber/infrastructure/backend/dtos/license_validation_dto.dart';
@@ -18,7 +16,6 @@ class BackendRepositoryImpl implements BackendRepository {
   BackendRepositoryImpl({required Dio dio}) : _dio = dio;
 
   final Dio _dio;
-  final _logger = AppLogger('BackendRepo');
 
   @override
   Future<LicenseActivationDto> activateLicense({
@@ -105,21 +102,6 @@ class BackendRepositoryImpl implements BackendRepository {
     if (data == null) return null;
 
     return LatestReleaseDto.fromJson(data as Map<String, dynamic>);
-  }
-
-  @override
-  Future<void> reportCrash(CrashReportDto report) async {
-    try {
-      await _dio.post<Map<String, dynamic>>(
-        '/telemetry/crash',
-        data: report.toJson(),
-      );
-    } on DioException catch (e) {
-      // Best-effort: log but don't throw.
-      _logger.debug('Crash report failed: ${e.message}');
-    } on AppException {
-      // Best-effort: swallow.
-    }
   }
 
   /// Extract the `data` field from a successful response.

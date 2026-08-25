@@ -33,9 +33,6 @@ class AppConstants {
   /// Default user request interval (ms).
   static const defaultUserIntervalMs = 1000;
 
-  /// Crash report max retries.
-  static const crashReportMaxRetries = 3;
-
   /// Maximum recent task logs to keep.
   static const maxRecentTaskLogs = 3;
 

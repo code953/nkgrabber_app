@@ -180,5 +180,3 @@ void _applyGb2312Level2(List<int?> table) {
     }
   }
 }
-
-

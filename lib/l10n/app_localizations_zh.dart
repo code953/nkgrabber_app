@@ -30,19 +30,6 @@ class SZh extends S {
   String get activationFormatError => '激活码格式错误，请输入 XXXX-XXXX-XXXX-XXXX 格式';
 
   @override
-  String get consentTitle => '使用须知';
-
-  @override
-  String get consentCrashReportingDesc =>
-      '为改进产品质量，本应用默认开启崩溃日志上报。上报内容仅包含脱敏堆栈信息、应用版本和平台信息，绝不包含您的账号、密码、Cookie、激活码或课程数据。';
-
-  @override
-  String get consentDisableOption => '始终关闭崩溃上报';
-
-  @override
-  String get consentAgree => '我已知悉，继续使用';
-
-  @override
   String get navAccounts => '账号';
 
   @override
@@ -210,12 +197,6 @@ class SZh extends S {
 
   @override
   String get settingsDiagnosticsHint => '导出前将强制脱敏，请导出后自行复核';
-
-  @override
-  String get settingsCrashReporting => '崩溃日志上报';
-
-  @override
-  String get settingsCrashReportingDesc => '帮助我们改进产品质量';
 
   @override
   String get settingsCheckUpdate => '检查更新';

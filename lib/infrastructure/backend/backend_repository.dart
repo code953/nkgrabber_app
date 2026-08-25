@@ -4,7 +4,6 @@
 library;
 
 import 'package:nkgrabber/infrastructure/backend/dtos/app_config_dto.dart';
-import 'package:nkgrabber/infrastructure/backend/dtos/crash_report_dto.dart';
 import 'package:nkgrabber/infrastructure/backend/dtos/latest_release_dto.dart';
 import 'package:nkgrabber/infrastructure/backend/dtos/license_activation_dto.dart';
 import 'package:nkgrabber/infrastructure/backend/dtos/license_validation_dto.dart';
@@ -42,7 +41,4 @@ abstract class BackendRepository {
     required String currentVersion,
     required String channel,
   });
-
-  /// Report a crash (best-effort, no throw on failure).
-  Future<void> reportCrash(CrashReportDto report);
 }

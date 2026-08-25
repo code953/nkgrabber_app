@@ -6,7 +6,6 @@ import 'package:nkgrabber/core/utils/extensions.dart';
 import 'package:nkgrabber/features/grabber/application/retry_classifier.dart';
 import 'package:nkgrabber/features/grabber/domain/grabber_state.dart';
 import 'package:nkgrabber/infrastructure/backend/dtos/app_config_dto.dart';
-import 'package:nkgrabber/infrastructure/backend/dtos/crash_report_dto.dart';
 import 'package:nkgrabber/infrastructure/backend/dtos/latest_release_dto.dart';
 import 'package:nkgrabber/infrastructure/backend/dtos/license_activation_dto.dart';
 import 'package:nkgrabber/infrastructure/campus/clock_sync.dart';
@@ -495,24 +494,6 @@ void main() {
       });
       expect(dto.maxDevices, 1);
       expect(dto.unbindCooldownHours, 24);
-    });
-
-    test('CrashReportDto toJson contains required fields', () {
-      const report = CrashReportDto(
-        installIdHash: 'hash123',
-        appVersion: '1.0.0',
-        platform: 'windows',
-        arch: 'x64',
-        locale: 'zh_CN',
-        crashType: 'FlutterError',
-        sanitizedStackTrace: 'stack...',
-        timestamp: '2026-07-21T05:00:00Z',
-      );
-      final json = report.toJson();
-      expect(json['installIdHash'], 'hash123');
-      expect(json['platform'], 'windows');
-      expect(json, isNot(contains('password')));
-      expect(json, isNot(contains('cookie')));
     });
   });
 

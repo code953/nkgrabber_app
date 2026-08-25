@@ -1,8 +1,10 @@
 /// NKgrabber application entry point.
 ///
-/// Initializes logging, secure storage, database, and crash reporting
-/// before launching the main app widget within a Riverpod ProviderScope.
+/// Initializes logging and local crash capture before launching the main
+/// app widget within a Riverpod ProviderScope.
 library;
+
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -10,6 +12,7 @@ import 'package:go_router/go_router.dart';
 import 'package:nkgrabber/app/router.dart';
 import 'package:nkgrabber/app/theme.dart';
 import 'package:nkgrabber/core/logging/app_logger.dart';
+import 'package:nkgrabber/core/logging/log_sanitizer.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -17,11 +20,31 @@ void main() {
   // Initialize logging system.
   AppLogger.init();
 
-  AppLogger('main').info('NKgrabber starting...');
+  final logger = AppLogger('main');
+  logger.info('NKgrabber starting...');
 
-  runApp(
-    const ProviderScope(
-      child: NKGrabberApp(),
+  // Capture framework errors locally. Nothing is sent over the network —
+  // the message is sanitized and written to the local log so a failed
+  // grab task can still be diagnosed after the fact.
+  FlutterError.onError = (details) {
+    logger.error(
+      LogSanitizer.sanitize(details.exceptionAsString()),
+      details.exception,
+      details.stack,
+    );
+  };
+
+  // Capture uncaught async errors from the app's zone.
+  runZonedGuarded(
+    () => runApp(
+      const ProviderScope(
+        child: NKGrabberApp(),
+      ),
+    ),
+    (error, stackTrace) => logger.error(
+      LogSanitizer.sanitize(error.toString()),
+      error,
+      stackTrace,
     ),
   );
 }
@@ -58,6 +81,3 @@ class _NKGrabberAppState extends ConsumerState<NKGrabberApp> {
     );
   }
 }
-
-
-

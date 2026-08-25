@@ -139,30 +139,6 @@ abstract class S {
   /// **'激活码格式错误，请输入 XXXX-XXXX-XXXX-XXXX 格式'**
   String get activationFormatError;
 
-  /// No description provided for @consentTitle.
-  ///
-  /// In zh, this message translates to:
-  /// **'使用须知'**
-  String get consentTitle;
-
-  /// No description provided for @consentCrashReportingDesc.
-  ///
-  /// In zh, this message translates to:
-  /// **'为改进产品质量，本应用默认开启崩溃日志上报。上报内容仅包含脱敏堆栈信息、应用版本和平台信息，绝不包含您的账号、密码、Cookie、激活码或课程数据。'**
-  String get consentCrashReportingDesc;
-
-  /// No description provided for @consentDisableOption.
-  ///
-  /// In zh, this message translates to:
-  /// **'始终关闭崩溃上报'**
-  String get consentDisableOption;
-
-  /// No description provided for @consentAgree.
-  ///
-  /// In zh, this message translates to:
-  /// **'我已知悉，继续使用'**
-  String get consentAgree;
-
   /// No description provided for @navAccounts.
   ///
   /// In zh, this message translates to:
@@ -492,18 +468,6 @@ abstract class S {
   /// In zh, this message translates to:
   /// **'导出前将强制脱敏，请导出后自行复核'**
   String get settingsDiagnosticsHint;
-
-  /// No description provided for @settingsCrashReporting.
-  ///
-  /// In zh, this message translates to:
-  /// **'崩溃日志上报'**
-  String get settingsCrashReporting;
-
-  /// No description provided for @settingsCrashReportingDesc.
-  ///
-  /// In zh, this message translates to:
-  /// **'帮助我们改进产品质量'**
-  String get settingsCrashReportingDesc;
 
   /// No description provided for @settingsCheckUpdate.
   ///

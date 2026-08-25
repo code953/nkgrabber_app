@@ -30,19 +30,6 @@ class SEn extends S {
   String get activationFormatError => 'Invalid format. Use XXXX-XXXX-XXXX-XXXX';
 
   @override
-  String get consentTitle => 'Notice';
-
-  @override
-  String get consentCrashReportingDesc =>
-      'This app sends crash reports by default to improve quality. Reports include only sanitized stack traces, app version, and platform info. They never include your account, password, cookies, activation code, or course data.';
-
-  @override
-  String get consentDisableOption => 'Always disable crash reporting';
-
-  @override
-  String get consentAgree => 'I understand, continue';
-
-  @override
   String get navAccounts => 'Accounts';
 
   @override
@@ -213,12 +200,6 @@ class SEn extends S {
   @override
   String get settingsDiagnosticsHint =>
       'Data will be sanitized before export. Please review after export.';
-
-  @override
-  String get settingsCrashReporting => 'Crash Reporting';
-
-  @override
-  String get settingsCrashReportingDesc => 'Help us improve quality';
 
   @override
   String get settingsCheckUpdate => 'Check for Updates';

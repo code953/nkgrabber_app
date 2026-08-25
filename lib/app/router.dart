@@ -10,7 +10,6 @@ import 'package:nkgrabber/features/accounts/presentation/accounts_page.dart';
 import 'package:nkgrabber/features/courses/presentation/course_config_page.dart';
 import 'package:nkgrabber/features/grabber/presentation/grabber_page.dart';
 import 'package:nkgrabber/features/license/presentation/activation_page.dart';
-import 'package:nkgrabber/features/settings/presentation/consent_page.dart';
 import 'package:nkgrabber/features/settings/presentation/settings_page.dart';
 
 /// Route path constants.
@@ -18,7 +17,6 @@ class AppRoutes {
   const AppRoutes._();
 
   static const startup = '/startup';
-  static const consent = '/consent';
   static const activation = '/activation';
   static const home = '/home';
   static const accounts = '/home/accounts';
@@ -37,10 +35,6 @@ GoRouter createRouter() {
       GoRoute(
         path: AppRoutes.startup,
         builder: (context, state) => const StartupPage(),
-      ),
-      GoRoute(
-        path: AppRoutes.consent,
-        builder: (context, state) => const ConsentPage(),
       ),
       GoRoute(
         path: AppRoutes.activation,
