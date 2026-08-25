@@ -2097,17 +2097,39 @@ class $AppSettingsTable extends AppSettings
     requiredDuringInsert: false,
     defaultValue: const Constant(1000),
   );
-  static const VerificationMeta _updateChannelMeta = const VerificationMeta(
-    'updateChannel',
-  );
+  static const VerificationMeta _minRequestIntervalMsMeta =
+      const VerificationMeta('minRequestIntervalMs');
   @override
-  late final GeneratedColumn<String> updateChannel = GeneratedColumn<String>(
-    'update_channel',
+  late final GeneratedColumn<int> minRequestIntervalMs = GeneratedColumn<int>(
+    'min_request_interval_ms',
     aliasedName,
     false,
-    type: DriftSqlType.string,
+    type: DriftSqlType.int,
     requiredDuringInsert: false,
-    defaultValue: const Constant('stable'),
+    defaultValue: const Constant(800),
+  );
+  static const VerificationMeta _maxAccountsMeta = const VerificationMeta(
+    'maxAccounts',
+  );
+  @override
+  late final GeneratedColumn<int> maxAccounts = GeneratedColumn<int>(
+    'max_accounts',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(5),
+  );
+  static const VerificationMeta _maxConcurrentAccountsMeta =
+      const VerificationMeta('maxConcurrentAccounts');
+  @override
+  late final GeneratedColumn<int> maxConcurrentAccounts = GeneratedColumn<int>(
+    'max_concurrent_accounts',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(3),
   );
   static const VerificationMeta _logLevelMeta = const VerificationMeta(
     'logLevel',
@@ -2131,30 +2153,16 @@ class $AppSettingsTable extends AppSettings
     requiredDuringInsert: false,
     defaultValue: const Constant('zh_CN'),
   );
-  static const VerificationMeta _crashReportingEnabledMeta =
-      const VerificationMeta('crashReportingEnabled');
-  @override
-  late final GeneratedColumn<bool> crashReportingEnabled =
-      GeneratedColumn<bool>(
-        'crash_reporting_enabled',
-        aliasedName,
-        false,
-        type: DriftSqlType.bool,
-        requiredDuringInsert: false,
-        defaultConstraints: GeneratedColumn.constraintIsAlways(
-          'CHECK ("crash_reporting_enabled" IN (0, 1))',
-        ),
-        defaultValue: const Constant(true),
-      );
   @override
   List<GeneratedColumn> get $columns => [
     id,
     theme,
     userIntervalMs,
-    updateChannel,
+    minRequestIntervalMs,
+    maxAccounts,
+    maxConcurrentAccounts,
     logLevel,
     locale,
-    crashReportingEnabled,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -2186,12 +2194,30 @@ class $AppSettingsTable extends AppSettings
         ),
       );
     }
-    if (data.containsKey('update_channel')) {
+    if (data.containsKey('min_request_interval_ms')) {
       context.handle(
-        _updateChannelMeta,
-        updateChannel.isAcceptableOrUnknown(
-          data['update_channel']!,
-          _updateChannelMeta,
+        _minRequestIntervalMsMeta,
+        minRequestIntervalMs.isAcceptableOrUnknown(
+          data['min_request_interval_ms']!,
+          _minRequestIntervalMsMeta,
+        ),
+      );
+    }
+    if (data.containsKey('max_accounts')) {
+      context.handle(
+        _maxAccountsMeta,
+        maxAccounts.isAcceptableOrUnknown(
+          data['max_accounts']!,
+          _maxAccountsMeta,
+        ),
+      );
+    }
+    if (data.containsKey('max_concurrent_accounts')) {
+      context.handle(
+        _maxConcurrentAccountsMeta,
+        maxConcurrentAccounts.isAcceptableOrUnknown(
+          data['max_concurrent_accounts']!,
+          _maxConcurrentAccountsMeta,
         ),
       );
     }
@@ -2205,15 +2231,6 @@ class $AppSettingsTable extends AppSettings
       context.handle(
         _localeMeta,
         locale.isAcceptableOrUnknown(data['locale']!, _localeMeta),
-      );
-    }
-    if (data.containsKey('crash_reporting_enabled')) {
-      context.handle(
-        _crashReportingEnabledMeta,
-        crashReportingEnabled.isAcceptableOrUnknown(
-          data['crash_reporting_enabled']!,
-          _crashReportingEnabledMeta,
-        ),
       );
     }
     return context;
@@ -2237,9 +2254,17 @@ class $AppSettingsTable extends AppSettings
         DriftSqlType.int,
         data['${effectivePrefix}user_interval_ms'],
       )!,
-      updateChannel: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}update_channel'],
+      minRequestIntervalMs: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}min_request_interval_ms'],
+      )!,
+      maxAccounts: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}max_accounts'],
+      )!,
+      maxConcurrentAccounts: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}max_concurrent_accounts'],
       )!,
       logLevel: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
@@ -2248,10 +2273,6 @@ class $AppSettingsTable extends AppSettings
       locale: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}locale'],
-      )!,
-      crashReportingEnabled: attachedDatabase.typeMapping.read(
-        DriftSqlType.bool,
-        data['${effectivePrefix}crash_reporting_enabled'],
       )!,
     );
   }
@@ -2273,25 +2294,33 @@ class AppSettingsEntry extends DataClass
   /// User-configured request interval in milliseconds.
   final int userIntervalMs;
 
-  /// Update channel preference.
-  final String updateChannel;
+  /// Floor for the request interval (ms).
+  ///
+  /// `effectiveIntervalMs = max(userIntervalMs, minRequestIntervalMs)` —
+  /// protects the campus server and keeps the client below the rate at
+  /// which its risk control kicks in.
+  final int minRequestIntervalMs;
+
+  /// Maximum number of simultaneously enabled accounts.
+  final int maxAccounts;
+
+  /// Maximum number of accounts grabbing in parallel.
+  final int maxConcurrentAccounts;
 
   /// Minimum log level: 'debug', 'info', 'warn', 'error'.
   final String logLevel;
 
   /// UI locale code.
   final String locale;
-
-  /// Whether crash reporting is enabled (opt-out).
-  final bool crashReportingEnabled;
   const AppSettingsEntry({
     required this.id,
     required this.theme,
     required this.userIntervalMs,
-    required this.updateChannel,
+    required this.minRequestIntervalMs,
+    required this.maxAccounts,
+    required this.maxConcurrentAccounts,
     required this.logLevel,
     required this.locale,
-    required this.crashReportingEnabled,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -2299,10 +2328,11 @@ class AppSettingsEntry extends DataClass
     map['id'] = Variable<int>(id);
     map['theme'] = Variable<String>(theme);
     map['user_interval_ms'] = Variable<int>(userIntervalMs);
-    map['update_channel'] = Variable<String>(updateChannel);
+    map['min_request_interval_ms'] = Variable<int>(minRequestIntervalMs);
+    map['max_accounts'] = Variable<int>(maxAccounts);
+    map['max_concurrent_accounts'] = Variable<int>(maxConcurrentAccounts);
     map['log_level'] = Variable<String>(logLevel);
     map['locale'] = Variable<String>(locale);
-    map['crash_reporting_enabled'] = Variable<bool>(crashReportingEnabled);
     return map;
   }
 
@@ -2311,10 +2341,11 @@ class AppSettingsEntry extends DataClass
       id: Value(id),
       theme: Value(theme),
       userIntervalMs: Value(userIntervalMs),
-      updateChannel: Value(updateChannel),
+      minRequestIntervalMs: Value(minRequestIntervalMs),
+      maxAccounts: Value(maxAccounts),
+      maxConcurrentAccounts: Value(maxConcurrentAccounts),
       logLevel: Value(logLevel),
       locale: Value(locale),
-      crashReportingEnabled: Value(crashReportingEnabled),
     );
   }
 
@@ -2327,12 +2358,15 @@ class AppSettingsEntry extends DataClass
       id: serializer.fromJson<int>(json['id']),
       theme: serializer.fromJson<String>(json['theme']),
       userIntervalMs: serializer.fromJson<int>(json['userIntervalMs']),
-      updateChannel: serializer.fromJson<String>(json['updateChannel']),
+      minRequestIntervalMs: serializer.fromJson<int>(
+        json['minRequestIntervalMs'],
+      ),
+      maxAccounts: serializer.fromJson<int>(json['maxAccounts']),
+      maxConcurrentAccounts: serializer.fromJson<int>(
+        json['maxConcurrentAccounts'],
+      ),
       logLevel: serializer.fromJson<String>(json['logLevel']),
       locale: serializer.fromJson<String>(json['locale']),
-      crashReportingEnabled: serializer.fromJson<bool>(
-        json['crashReportingEnabled'],
-      ),
     );
   }
   @override
@@ -2342,10 +2376,11 @@ class AppSettingsEntry extends DataClass
       'id': serializer.toJson<int>(id),
       'theme': serializer.toJson<String>(theme),
       'userIntervalMs': serializer.toJson<int>(userIntervalMs),
-      'updateChannel': serializer.toJson<String>(updateChannel),
+      'minRequestIntervalMs': serializer.toJson<int>(minRequestIntervalMs),
+      'maxAccounts': serializer.toJson<int>(maxAccounts),
+      'maxConcurrentAccounts': serializer.toJson<int>(maxConcurrentAccounts),
       'logLevel': serializer.toJson<String>(logLevel),
       'locale': serializer.toJson<String>(locale),
-      'crashReportingEnabled': serializer.toJson<bool>(crashReportingEnabled),
     };
   }
 
@@ -2353,18 +2388,20 @@ class AppSettingsEntry extends DataClass
     int? id,
     String? theme,
     int? userIntervalMs,
-    String? updateChannel,
+    int? minRequestIntervalMs,
+    int? maxAccounts,
+    int? maxConcurrentAccounts,
     String? logLevel,
     String? locale,
-    bool? crashReportingEnabled,
   }) => AppSettingsEntry(
     id: id ?? this.id,
     theme: theme ?? this.theme,
     userIntervalMs: userIntervalMs ?? this.userIntervalMs,
-    updateChannel: updateChannel ?? this.updateChannel,
+    minRequestIntervalMs: minRequestIntervalMs ?? this.minRequestIntervalMs,
+    maxAccounts: maxAccounts ?? this.maxAccounts,
+    maxConcurrentAccounts: maxConcurrentAccounts ?? this.maxConcurrentAccounts,
     logLevel: logLevel ?? this.logLevel,
     locale: locale ?? this.locale,
-    crashReportingEnabled: crashReportingEnabled ?? this.crashReportingEnabled,
   );
   AppSettingsEntry copyWithCompanion(AppSettingsCompanion data) {
     return AppSettingsEntry(
@@ -2373,14 +2410,17 @@ class AppSettingsEntry extends DataClass
       userIntervalMs: data.userIntervalMs.present
           ? data.userIntervalMs.value
           : this.userIntervalMs,
-      updateChannel: data.updateChannel.present
-          ? data.updateChannel.value
-          : this.updateChannel,
+      minRequestIntervalMs: data.minRequestIntervalMs.present
+          ? data.minRequestIntervalMs.value
+          : this.minRequestIntervalMs,
+      maxAccounts: data.maxAccounts.present
+          ? data.maxAccounts.value
+          : this.maxAccounts,
+      maxConcurrentAccounts: data.maxConcurrentAccounts.present
+          ? data.maxConcurrentAccounts.value
+          : this.maxConcurrentAccounts,
       logLevel: data.logLevel.present ? data.logLevel.value : this.logLevel,
       locale: data.locale.present ? data.locale.value : this.locale,
-      crashReportingEnabled: data.crashReportingEnabled.present
-          ? data.crashReportingEnabled.value
-          : this.crashReportingEnabled,
     );
   }
 
@@ -2390,10 +2430,11 @@ class AppSettingsEntry extends DataClass
           ..write('id: $id, ')
           ..write('theme: $theme, ')
           ..write('userIntervalMs: $userIntervalMs, ')
-          ..write('updateChannel: $updateChannel, ')
+          ..write('minRequestIntervalMs: $minRequestIntervalMs, ')
+          ..write('maxAccounts: $maxAccounts, ')
+          ..write('maxConcurrentAccounts: $maxConcurrentAccounts, ')
           ..write('logLevel: $logLevel, ')
-          ..write('locale: $locale, ')
-          ..write('crashReportingEnabled: $crashReportingEnabled')
+          ..write('locale: $locale')
           ..write(')'))
         .toString();
   }
@@ -2403,10 +2444,11 @@ class AppSettingsEntry extends DataClass
     id,
     theme,
     userIntervalMs,
-    updateChannel,
+    minRequestIntervalMs,
+    maxAccounts,
+    maxConcurrentAccounts,
     logLevel,
     locale,
-    crashReportingEnabled,
   );
   @override
   bool operator ==(Object other) =>
@@ -2415,56 +2457,63 @@ class AppSettingsEntry extends DataClass
           other.id == this.id &&
           other.theme == this.theme &&
           other.userIntervalMs == this.userIntervalMs &&
-          other.updateChannel == this.updateChannel &&
+          other.minRequestIntervalMs == this.minRequestIntervalMs &&
+          other.maxAccounts == this.maxAccounts &&
+          other.maxConcurrentAccounts == this.maxConcurrentAccounts &&
           other.logLevel == this.logLevel &&
-          other.locale == this.locale &&
-          other.crashReportingEnabled == this.crashReportingEnabled);
+          other.locale == this.locale);
 }
 
 class AppSettingsCompanion extends UpdateCompanion<AppSettingsEntry> {
   final Value<int> id;
   final Value<String> theme;
   final Value<int> userIntervalMs;
-  final Value<String> updateChannel;
+  final Value<int> minRequestIntervalMs;
+  final Value<int> maxAccounts;
+  final Value<int> maxConcurrentAccounts;
   final Value<String> logLevel;
   final Value<String> locale;
-  final Value<bool> crashReportingEnabled;
   const AppSettingsCompanion({
     this.id = const Value.absent(),
     this.theme = const Value.absent(),
     this.userIntervalMs = const Value.absent(),
-    this.updateChannel = const Value.absent(),
+    this.minRequestIntervalMs = const Value.absent(),
+    this.maxAccounts = const Value.absent(),
+    this.maxConcurrentAccounts = const Value.absent(),
     this.logLevel = const Value.absent(),
     this.locale = const Value.absent(),
-    this.crashReportingEnabled = const Value.absent(),
   });
   AppSettingsCompanion.insert({
     this.id = const Value.absent(),
     this.theme = const Value.absent(),
     this.userIntervalMs = const Value.absent(),
-    this.updateChannel = const Value.absent(),
+    this.minRequestIntervalMs = const Value.absent(),
+    this.maxAccounts = const Value.absent(),
+    this.maxConcurrentAccounts = const Value.absent(),
     this.logLevel = const Value.absent(),
     this.locale = const Value.absent(),
-    this.crashReportingEnabled = const Value.absent(),
   });
   static Insertable<AppSettingsEntry> custom({
     Expression<int>? id,
     Expression<String>? theme,
     Expression<int>? userIntervalMs,
-    Expression<String>? updateChannel,
+    Expression<int>? minRequestIntervalMs,
+    Expression<int>? maxAccounts,
+    Expression<int>? maxConcurrentAccounts,
     Expression<String>? logLevel,
     Expression<String>? locale,
-    Expression<bool>? crashReportingEnabled,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
       if (theme != null) 'theme': theme,
       if (userIntervalMs != null) 'user_interval_ms': userIntervalMs,
-      if (updateChannel != null) 'update_channel': updateChannel,
+      if (minRequestIntervalMs != null)
+        'min_request_interval_ms': minRequestIntervalMs,
+      if (maxAccounts != null) 'max_accounts': maxAccounts,
+      if (maxConcurrentAccounts != null)
+        'max_concurrent_accounts': maxConcurrentAccounts,
       if (logLevel != null) 'log_level': logLevel,
       if (locale != null) 'locale': locale,
-      if (crashReportingEnabled != null)
-        'crash_reporting_enabled': crashReportingEnabled,
     });
   }
 
@@ -2472,20 +2521,22 @@ class AppSettingsCompanion extends UpdateCompanion<AppSettingsEntry> {
     Value<int>? id,
     Value<String>? theme,
     Value<int>? userIntervalMs,
-    Value<String>? updateChannel,
+    Value<int>? minRequestIntervalMs,
+    Value<int>? maxAccounts,
+    Value<int>? maxConcurrentAccounts,
     Value<String>? logLevel,
     Value<String>? locale,
-    Value<bool>? crashReportingEnabled,
   }) {
     return AppSettingsCompanion(
       id: id ?? this.id,
       theme: theme ?? this.theme,
       userIntervalMs: userIntervalMs ?? this.userIntervalMs,
-      updateChannel: updateChannel ?? this.updateChannel,
+      minRequestIntervalMs: minRequestIntervalMs ?? this.minRequestIntervalMs,
+      maxAccounts: maxAccounts ?? this.maxAccounts,
+      maxConcurrentAccounts:
+          maxConcurrentAccounts ?? this.maxConcurrentAccounts,
       logLevel: logLevel ?? this.logLevel,
       locale: locale ?? this.locale,
-      crashReportingEnabled:
-          crashReportingEnabled ?? this.crashReportingEnabled,
     );
   }
 
@@ -2501,19 +2552,24 @@ class AppSettingsCompanion extends UpdateCompanion<AppSettingsEntry> {
     if (userIntervalMs.present) {
       map['user_interval_ms'] = Variable<int>(userIntervalMs.value);
     }
-    if (updateChannel.present) {
-      map['update_channel'] = Variable<String>(updateChannel.value);
+    if (minRequestIntervalMs.present) {
+      map['min_request_interval_ms'] = Variable<int>(
+        minRequestIntervalMs.value,
+      );
+    }
+    if (maxAccounts.present) {
+      map['max_accounts'] = Variable<int>(maxAccounts.value);
+    }
+    if (maxConcurrentAccounts.present) {
+      map['max_concurrent_accounts'] = Variable<int>(
+        maxConcurrentAccounts.value,
+      );
     }
     if (logLevel.present) {
       map['log_level'] = Variable<String>(logLevel.value);
     }
     if (locale.present) {
       map['locale'] = Variable<String>(locale.value);
-    }
-    if (crashReportingEnabled.present) {
-      map['crash_reporting_enabled'] = Variable<bool>(
-        crashReportingEnabled.value,
-      );
     }
     return map;
   }
@@ -2524,10 +2580,11 @@ class AppSettingsCompanion extends UpdateCompanion<AppSettingsEntry> {
           ..write('id: $id, ')
           ..write('theme: $theme, ')
           ..write('userIntervalMs: $userIntervalMs, ')
-          ..write('updateChannel: $updateChannel, ')
+          ..write('minRequestIntervalMs: $minRequestIntervalMs, ')
+          ..write('maxAccounts: $maxAccounts, ')
+          ..write('maxConcurrentAccounts: $maxConcurrentAccounts, ')
           ..write('logLevel: $logLevel, ')
-          ..write('locale: $locale, ')
-          ..write('crashReportingEnabled: $crashReportingEnabled')
+          ..write('locale: $locale')
           ..write(')'))
         .toString();
   }
@@ -3965,20 +4022,22 @@ typedef $$AppSettingsTableCreateCompanionBuilder =
       Value<int> id,
       Value<String> theme,
       Value<int> userIntervalMs,
-      Value<String> updateChannel,
+      Value<int> minRequestIntervalMs,
+      Value<int> maxAccounts,
+      Value<int> maxConcurrentAccounts,
       Value<String> logLevel,
       Value<String> locale,
-      Value<bool> crashReportingEnabled,
     });
 typedef $$AppSettingsTableUpdateCompanionBuilder =
     AppSettingsCompanion Function({
       Value<int> id,
       Value<String> theme,
       Value<int> userIntervalMs,
-      Value<String> updateChannel,
+      Value<int> minRequestIntervalMs,
+      Value<int> maxAccounts,
+      Value<int> maxConcurrentAccounts,
       Value<String> logLevel,
       Value<String> locale,
-      Value<bool> crashReportingEnabled,
     });
 
 class $$AppSettingsTableFilterComposer
@@ -4005,8 +4064,18 @@ class $$AppSettingsTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
-  ColumnFilters<String> get updateChannel => $composableBuilder(
-    column: $table.updateChannel,
+  ColumnFilters<int> get minRequestIntervalMs => $composableBuilder(
+    column: $table.minRequestIntervalMs,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get maxAccounts => $composableBuilder(
+    column: $table.maxAccounts,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get maxConcurrentAccounts => $composableBuilder(
+    column: $table.maxConcurrentAccounts,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -4017,11 +4086,6 @@ class $$AppSettingsTableFilterComposer
 
   ColumnFilters<String> get locale => $composableBuilder(
     column: $table.locale,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<bool> get crashReportingEnabled => $composableBuilder(
-    column: $table.crashReportingEnabled,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -4050,8 +4114,18 @@ class $$AppSettingsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
-  ColumnOrderings<String> get updateChannel => $composableBuilder(
-    column: $table.updateChannel,
+  ColumnOrderings<int> get minRequestIntervalMs => $composableBuilder(
+    column: $table.minRequestIntervalMs,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get maxAccounts => $composableBuilder(
+    column: $table.maxAccounts,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get maxConcurrentAccounts => $composableBuilder(
+    column: $table.maxConcurrentAccounts,
     builder: (column) => ColumnOrderings(column),
   );
 
@@ -4062,11 +4136,6 @@ class $$AppSettingsTableOrderingComposer
 
   ColumnOrderings<String> get locale => $composableBuilder(
     column: $table.locale,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<bool> get crashReportingEnabled => $composableBuilder(
-    column: $table.crashReportingEnabled,
     builder: (column) => ColumnOrderings(column),
   );
 }
@@ -4091,8 +4160,18 @@ class $$AppSettingsTableAnnotationComposer
     builder: (column) => column,
   );
 
-  GeneratedColumn<String> get updateChannel => $composableBuilder(
-    column: $table.updateChannel,
+  GeneratedColumn<int> get minRequestIntervalMs => $composableBuilder(
+    column: $table.minRequestIntervalMs,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get maxAccounts => $composableBuilder(
+    column: $table.maxAccounts,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get maxConcurrentAccounts => $composableBuilder(
+    column: $table.maxConcurrentAccounts,
     builder: (column) => column,
   );
 
@@ -4101,11 +4180,6 @@ class $$AppSettingsTableAnnotationComposer
 
   GeneratedColumn<String> get locale =>
       $composableBuilder(column: $table.locale, builder: (column) => column);
-
-  GeneratedColumn<bool> get crashReportingEnabled => $composableBuilder(
-    column: $table.crashReportingEnabled,
-    builder: (column) => column,
-  );
 }
 
 class $$AppSettingsTableTableManager
@@ -4142,36 +4216,40 @@ class $$AppSettingsTableTableManager
                 Value<int> id = const Value.absent(),
                 Value<String> theme = const Value.absent(),
                 Value<int> userIntervalMs = const Value.absent(),
-                Value<String> updateChannel = const Value.absent(),
+                Value<int> minRequestIntervalMs = const Value.absent(),
+                Value<int> maxAccounts = const Value.absent(),
+                Value<int> maxConcurrentAccounts = const Value.absent(),
                 Value<String> logLevel = const Value.absent(),
                 Value<String> locale = const Value.absent(),
-                Value<bool> crashReportingEnabled = const Value.absent(),
               }) => AppSettingsCompanion(
                 id: id,
                 theme: theme,
                 userIntervalMs: userIntervalMs,
-                updateChannel: updateChannel,
+                minRequestIntervalMs: minRequestIntervalMs,
+                maxAccounts: maxAccounts,
+                maxConcurrentAccounts: maxConcurrentAccounts,
                 logLevel: logLevel,
                 locale: locale,
-                crashReportingEnabled: crashReportingEnabled,
               ),
           createCompanionCallback:
               ({
                 Value<int> id = const Value.absent(),
                 Value<String> theme = const Value.absent(),
                 Value<int> userIntervalMs = const Value.absent(),
-                Value<String> updateChannel = const Value.absent(),
+                Value<int> minRequestIntervalMs = const Value.absent(),
+                Value<int> maxAccounts = const Value.absent(),
+                Value<int> maxConcurrentAccounts = const Value.absent(),
                 Value<String> logLevel = const Value.absent(),
                 Value<String> locale = const Value.absent(),
-                Value<bool> crashReportingEnabled = const Value.absent(),
               }) => AppSettingsCompanion.insert(
                 id: id,
                 theme: theme,
                 userIntervalMs: userIntervalMs,
-                updateChannel: updateChannel,
+                minRequestIntervalMs: minRequestIntervalMs,
+                maxAccounts: maxAccounts,
+                maxConcurrentAccounts: maxConcurrentAccounts,
                 logLevel: logLevel,
                 locale: locale,
-                crashReportingEnabled: crashReportingEnabled,
               ),
           withReferenceMapper: (p0) => p0
               .map((e) => (e.readTable(table), BaseReferences(db, table, e)))

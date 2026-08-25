@@ -117,6 +117,20 @@ void main() {
     test('timeouts are reasonable', () {
       expect(AppConstants.maxGrabTaskRuntimeMinutes, 30);
     });
+
+    test('default user interval is at or above the floor', () {
+      expect(
+        AppConstants.defaultUserIntervalMs,
+        greaterThanOrEqualTo(AppConstants.defaultMinRequestIntervalMs),
+      );
+    });
+
+    test('default concurrency does not exceed the account limit', () {
+      expect(
+        AppConstants.defaultMaxConcurrentAccounts,
+        lessThanOrEqualTo(AppConstants.defaultMaxAccounts),
+      );
+    });
   });
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -376,6 +390,16 @@ void main() {
 
     test('user interval above the floor is respected', () {
       expect(max(3000, 800), 3000);
+    });
+
+    test('the default pair yields the user interval', () {
+      expect(
+        max(
+          AppConstants.defaultUserIntervalMs,
+          AppConstants.defaultMinRequestIntervalMs,
+        ),
+        AppConstants.defaultUserIntervalMs,
+      );
     });
   });
 }

@@ -13,6 +13,18 @@ class AppConstants {
   /// Default user request interval (ms).
   static const defaultUserIntervalMs = 1000;
 
+  /// Default floor for the request interval (ms).
+  ///
+  /// Jitter is applied upward only, so the effective interval never drops
+  /// below this value.
+  static const defaultMinRequestIntervalMs = 800;
+
+  /// Default maximum number of simultaneously enabled accounts.
+  static const defaultMaxAccounts = 5;
+
+  /// Default maximum number of accounts grabbing in parallel.
+  static const defaultMaxConcurrentAccounts = 3;
+
   /// Maximum recent task logs to keep.
   static const maxRecentTaskLogs = 3;
 

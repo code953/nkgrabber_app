@@ -61,10 +61,18 @@ class SettingsDao extends DatabaseAccessor<AppDatabase>
     return update_(AppSettingsCompanion(locale: Value(locale)));
   }
 
-  /// Update crash reporting preference.
-  Future<void> setCrashReportingEnabled({required bool enabled}) {
-    return update_(
-      AppSettingsCompanion(crashReportingEnabled: Value(enabled)),
-    );
+  /// Update the request interval floor.
+  Future<void> setMinRequestIntervalMs(int ms) {
+    return update_(AppSettingsCompanion(minRequestIntervalMs: Value(ms)));
+  }
+
+  /// Update the maximum number of simultaneously enabled accounts.
+  Future<void> setMaxAccounts(int count) {
+    return update_(AppSettingsCompanion(maxAccounts: Value(count)));
+  }
+
+  /// Update the maximum number of accounts grabbing in parallel.
+  Future<void> setMaxConcurrentAccounts(int count) {
+    return update_(AppSettingsCompanion(maxConcurrentAccounts: Value(count)));
   }
 }

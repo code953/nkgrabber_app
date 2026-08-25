@@ -65,7 +65,7 @@ class SZh extends S {
   String get accountStatusNetwork => '网络错误';
 
   @override
-  String get accountStatusDisabled => '超额停用';
+  String get accountStatusDisabled => '超出上限停用';
 
   @override
   String get accountStatusValidating => '验证中';
@@ -167,6 +167,18 @@ class SZh extends S {
 
   @override
   String get settingsInterval => '用户请求间隔';
+
+  @override
+  String get settingsMinInterval => '间隔下限';
+
+  @override
+  String get settingsMinIntervalDesc => '过低可能触发学校风控';
+
+  @override
+  String get settingsMaxAccounts => '最大账号数';
+
+  @override
+  String get settingsMaxConcurrent => '最大并发账号数';
 
   @override
   String get settingsLogLevel => '日志级别';

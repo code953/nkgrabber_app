@@ -19,9 +19,21 @@ class AppSettings extends Table {
   IntColumn get userIntervalMs =>
       integer().withDefault(const Constant(1000))();
 
-  /// Update channel preference.
-  TextColumn get updateChannel =>
-      text().withDefault(const Constant('stable'))();
+  /// Floor for the request interval (ms).
+  ///
+  /// `effectiveIntervalMs = max(userIntervalMs, minRequestIntervalMs)` —
+  /// protects the campus server and keeps the client below the rate at
+  /// which its risk control kicks in.
+  IntColumn get minRequestIntervalMs =>
+      integer().withDefault(const Constant(800))();
+
+  /// Maximum number of simultaneously enabled accounts.
+  IntColumn get maxAccounts =>
+      integer().withDefault(const Constant(5))();
+
+  /// Maximum number of accounts grabbing in parallel.
+  IntColumn get maxConcurrentAccounts =>
+      integer().withDefault(const Constant(3))();
 
   /// Minimum log level: 'debug', 'info', 'warn', 'error'.
   TextColumn get logLevel =>
@@ -30,10 +42,6 @@ class AppSettings extends Table {
   /// UI locale code.
   TextColumn get locale =>
       text().withDefault(const Constant('zh_CN'))();
-
-  /// Whether crash reporting is enabled (opt-out).
-  BoolColumn get crashReportingEnabled =>
-      boolean().withDefault(const Constant(true))();
 
   @override
   Set<Column> get primaryKey => {id};

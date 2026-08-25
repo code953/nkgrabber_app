@@ -1,10 +1,12 @@
 /// Settings page.
 ///
-/// Provides UI for theme switching, request interval, and diagnostics export.
+/// Provides UI for theme switching, the four grabber limits, and
+/// diagnostics export.
 library;
 
 import 'package:flutter/material.dart';
 import 'package:nkgrabber/app/theme.dart';
+import 'package:nkgrabber/core/utils/constants.dart';
 
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
@@ -21,6 +23,9 @@ class SettingsPage extends StatelessWidget {
           const Divider(),
           const _SectionHeader(title: '抢课'),
           const _IntervalSetting(),
+          const _MinIntervalSetting(),
+          const _MaxAccountsSetting(),
+          const _MaxConcurrentSetting(),
           const Divider(),
           const _SectionHeader(title: '数据'),
           ListTile(
@@ -118,36 +123,137 @@ extension on AppThemeMode {
       };
 }
 
-class _IntervalSetting extends StatefulWidget {
-  const _IntervalSetting();
+/// A slider-backed numeric setting row.
+///
+/// All four grabber limits share this shape, so they share the widget.
+class _SliderSetting extends StatefulWidget {
+  const _SliderSetting({
+    required this.icon,
+    required this.title,
+    required this.initial,
+    required this.min,
+    required this.max,
+    required this.divisions,
+    required this.format,
+    this.subtitleHint,
+  });
+
+  final IconData icon;
+  final String title;
+  final double initial;
+  final double min;
+  final double max;
+  final int divisions;
+
+  /// Renders the current value, e.g. `(v) => '$v ms'`.
+  final String Function(int value) format;
+
+  /// Optional second line explaining what the value protects against.
+  final String? subtitleHint;
 
   @override
-  State<_IntervalSetting> createState() => _IntervalSettingState();
+  State<_SliderSetting> createState() => _SliderSettingState();
 }
 
-class _IntervalSettingState extends State<_IntervalSetting> {
-  double _intervalMs = 1000;
+class _SliderSettingState extends State<_SliderSetting> {
+  late double _value = widget.initial;
 
   @override
   Widget build(BuildContext context) {
+    final hint = widget.subtitleHint;
     return ListTile(
-      leading: const Icon(Icons.timer_outlined),
-      title: const Text('请求间隔'),
-      subtitle: Text('${_intervalMs.toInt()} ms'),
+      leading: Icon(widget.icon),
+      title: Text(widget.title),
+      subtitle: Text(
+        hint == null
+            ? widget.format(_value.toInt())
+            : '${widget.format(_value.toInt())} · $hint',
+      ),
       trailing: SizedBox(
         width: 200,
         child: Slider(
-          value: _intervalMs,
-          min: 500,
-          max: 5000,
-          divisions: 9,
-          label: '${_intervalMs.toInt()} ms',
+          value: _value,
+          min: widget.min,
+          max: widget.max,
+          divisions: widget.divisions,
+          label: widget.format(_value.toInt()),
           onChanged: (v) {
-            setState(() => _intervalMs = v);
+            setState(() => _value = v);
             // TODO: Persist via SettingsDao.
           },
         ),
       ),
+    );
+  }
+}
+
+class _IntervalSetting extends StatelessWidget {
+  const _IntervalSetting();
+
+  @override
+  Widget build(BuildContext context) {
+    return _SliderSetting(
+      icon: Icons.timer_outlined,
+      title: '请求间隔',
+      initial: AppConstants.defaultUserIntervalMs.toDouble(),
+      min: 500,
+      max: 5000,
+      divisions: 9,
+      format: (v) => '$v ms',
+    );
+  }
+}
+
+class _MinIntervalSetting extends StatelessWidget {
+  const _MinIntervalSetting();
+
+  @override
+  Widget build(BuildContext context) {
+    return _SliderSetting(
+      icon: Icons.speed_outlined,
+      title: '间隔下限',
+      initial: AppConstants.defaultMinRequestIntervalMs.toDouble(),
+      min: 500,
+      max: 3000,
+      divisions: 10,
+      format: (v) => '$v ms',
+      subtitleHint: '过低可能触发学校风控',
+    );
+  }
+}
+
+class _MaxAccountsSetting extends StatelessWidget {
+  const _MaxAccountsSetting();
+
+  @override
+  Widget build(BuildContext context) {
+    return _SliderSetting(
+      icon: Icons.people_outline,
+      title: '最大账号数',
+      initial: AppConstants.defaultMaxAccounts.toDouble(),
+      min: 1,
+      max: 20,
+      divisions: 19,
+      format: (v) => '$v 个',
+      subtitleHint: '超出后按添加时间从新到旧停用',
+    );
+  }
+}
+
+class _MaxConcurrentSetting extends StatelessWidget {
+  const _MaxConcurrentSetting();
+
+  @override
+  Widget build(BuildContext context) {
+    return _SliderSetting(
+      icon: Icons.dynamic_feed_outlined,
+      title: '最大并发账号数',
+      initial: AppConstants.defaultMaxConcurrentAccounts.toDouble(),
+      min: 1,
+      max: 10,
+      divisions: 9,
+      format: (v) => '$v 个',
+      subtitleHint: '同时抢课的账号数量',
     );
   }
 }

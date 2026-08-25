@@ -208,7 +208,7 @@ abstract class S {
   /// No description provided for @accountStatusDisabled.
   ///
   /// In zh, this message translates to:
-  /// **'超额停用'**
+  /// **'超出上限停用'**
   String get accountStatusDisabled;
 
   /// No description provided for @accountStatusValidating.
@@ -408,6 +408,30 @@ abstract class S {
   /// In zh, this message translates to:
   /// **'用户请求间隔'**
   String get settingsInterval;
+
+  /// No description provided for @settingsMinInterval.
+  ///
+  /// In zh, this message translates to:
+  /// **'间隔下限'**
+  String get settingsMinInterval;
+
+  /// No description provided for @settingsMinIntervalDesc.
+  ///
+  /// In zh, this message translates to:
+  /// **'过低可能触发学校风控'**
+  String get settingsMinIntervalDesc;
+
+  /// No description provided for @settingsMaxAccounts.
+  ///
+  /// In zh, this message translates to:
+  /// **'最大账号数'**
+  String get settingsMaxAccounts;
+
+  /// No description provided for @settingsMaxConcurrent.
+  ///
+  /// In zh, this message translates to:
+  /// **'最大并发账号数'**
+  String get settingsMaxConcurrent;
 
   /// No description provided for @settingsLogLevel.
   ///

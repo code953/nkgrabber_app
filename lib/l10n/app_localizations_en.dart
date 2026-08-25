@@ -171,6 +171,19 @@ class SEn extends S {
   String get settingsInterval => 'Request Interval';
 
   @override
+  String get settingsMinInterval => 'Interval Floor';
+
+  @override
+  String get settingsMinIntervalDesc =>
+      'Too low may trigger campus rate limiting';
+
+  @override
+  String get settingsMaxAccounts => 'Max Accounts';
+
+  @override
+  String get settingsMaxConcurrent => 'Max Concurrent Accounts';
+
+  @override
   String get settingsLogLevel => 'Log Level';
 
   @override

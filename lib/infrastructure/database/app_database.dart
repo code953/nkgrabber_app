@@ -34,7 +34,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   @override
   MigrationStrategy get migration {
@@ -64,6 +64,22 @@ class AppDatabase extends _$AppDatabase {
           await m.database.customStatement(
             'DROP TABLE IF EXISTS license_snapshots',
           );
+        }
+
+        // v2 → v3: the limits formerly issued by the server plan became
+        // local settings. Add the three new columns, then rebuild the table
+        // to drop `update_channel` and `crash_reporting_enabled` (SQLite has
+        // no DROP COLUMN, so alterTable recreates and copies).
+        if (from < 3) {
+          await m.addColumn(appSettings, appSettings.minRequestIntervalMs);
+          await m.addColumn(appSettings, appSettings.maxAccounts);
+          await m.addColumn(appSettings, appSettings.maxConcurrentAccounts);
+          // TableMigration carries drift's @experimental annotation, but it is
+          // the documented way to drop a column and has been stable for years.
+          // The alternative is hand-rolling SQLite's 12-step table rebuild
+          // with a hardcoded column list that silently rots on schema change.
+          // ignore: experimental_member_use
+          await m.alterTable(TableMigration(appSettings));
         }
       },
       beforeOpen: (details) async {

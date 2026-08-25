@@ -31,18 +31,21 @@ class GrabberEngine {
     required GrabTaskDao grabTaskDao,
     required AdapterResolver adapterResolver,
     required int maxConcurrentAccounts,
-    required int planMinIntervalMs,
+    required int minRequestIntervalMs,
     required int userIntervalMs,
   })  : _courseTargetDao = courseTargetDao,
         _grabTaskDao = grabTaskDao,
         _adapterResolver = adapterResolver,
         _maxConcurrent = maxConcurrentAccounts,
-        _effectiveIntervalMs = max(userIntervalMs, planMinIntervalMs);
+        _effectiveIntervalMs = max(userIntervalMs, minRequestIntervalMs);
 
   final CourseTargetDao _courseTargetDao;
   final GrabTaskDao _grabTaskDao;
   final AdapterResolver _adapterResolver;
   final int _maxConcurrent;
+
+  /// Effective interval: max of the user setting and the local floor.
+  /// Jitter is applied upward only, never below the floor.
   final int _effectiveIntervalMs;
 
   final _logger = AppLogger('GrabberEngine');

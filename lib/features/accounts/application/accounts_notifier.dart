@@ -1,7 +1,7 @@
 /// Accounts feature notifier.
 ///
 /// Manages the lifecycle of campus accounts: add, remove, validate,
-/// enable/disable, and enforce plan limits.
+/// enable/disable, and enforce the configured account limit.
 library;
 
 import 'dart:async';
@@ -184,11 +184,11 @@ class AccountsNotifier extends StateNotifier<AccountsState> {
     _logger.info('Account removed: ${account.displayName}');
   }
 
-  /// Enforce plan account limit.
+  /// Enforce the configured account limit.
   ///
-  /// When entitlements decrease, disables accounts from newest to oldest.
+  /// When the limit is lowered, disables accounts from newest to oldest.
   /// When slots are freed, re-enables from oldest to newest.
-  Future<void> enforcePlanLimit(int maxAccounts) async {
+  Future<void> enforceAccountLimit(int maxAccounts) async {
     final accounts = await _accountDao.getAll();
     final enabledCount =
         accounts.where((a) => a.enabled).length;
@@ -204,7 +204,7 @@ class AccountsNotifier extends StateNotifier<AccountsState> {
           AccountsCompanion(
             id: Value(sorted[i].id),
             enabled: const Value(false),
-            disabledReason: const Value('超出计划限额'),
+            disabledReason: const Value('超出账号数量上限'),
             status: const Value(AccountStatus.disabledByPlan),
             updatedAt: Value(DateTime.now().toUtc().toIso8601String()),
           ),
