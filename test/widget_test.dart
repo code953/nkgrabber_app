@@ -6,7 +6,6 @@ import 'package:nkgrabber/core/utils/extensions.dart';
 import 'package:nkgrabber/features/grabber/application/retry_classifier.dart';
 import 'package:nkgrabber/features/grabber/domain/grabber_state.dart';
 import 'package:nkgrabber/infrastructure/backend/dtos/app_config_dto.dart';
-import 'package:nkgrabber/infrastructure/backend/dtos/latest_release_dto.dart';
 import 'package:nkgrabber/infrastructure/backend/dtos/license_activation_dto.dart';
 import 'package:nkgrabber/infrastructure/campus/clock_sync.dart';
 import 'package:nkgrabber/infrastructure/campus/xkms_enum.dart';
@@ -466,21 +465,6 @@ void main() {
       final dto = AppConfigDto.fromJson({});
       expect(dto.maintenance, isFalse);
       expect(dto.minimumSupportedVersion, '0.0.0');
-    });
-
-    test('LatestReleaseDto fromJson parses all fields', () {
-      final dto = LatestReleaseDto.fromJson({
-        'version': '2.0.0',
-        'mandatory': true,
-        'publishedAt': '2026-07-20T00:00:00Z',
-        'releaseNotes': '新功能',
-        'downloadUrl': 'https://example.com/dl',
-        'sha256': 'abcdef',
-        'signature': 'c2ln',
-      });
-      expect(dto.version, '2.0.0');
-      expect(dto.mandatory, isTrue);
-      expect(dto.sha256, 'abcdef');
     });
 
     test('PlanDto fromJson with defaults', () {

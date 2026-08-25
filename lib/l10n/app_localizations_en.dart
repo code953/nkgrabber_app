@@ -202,9 +202,6 @@ class SEn extends S {
       'Data will be sanitized before export. Please review after export.';
 
   @override
-  String get settingsCheckUpdate => 'Check for Updates';
-
-  @override
   String get settingsUnbind => 'Unbind Device';
 
   @override
@@ -215,29 +212,6 @@ class SEn extends S {
   String settingsUnbindCooldown(String time) {
     return 'Cooling down, can rebind after $time';
   }
-
-  @override
-  String get updateTitle => 'Update';
-
-  @override
-  String updateAvailable(String version) {
-    return 'New version $version available';
-  }
-
-  @override
-  String get updateMandatory => 'This update is mandatory';
-
-  @override
-  String get updateDownload => 'Download';
-
-  @override
-  String get updateVerifying => 'Verifying...';
-
-  @override
-  String get updateVerifyFailed => 'Verification failed, please re-download';
-
-  @override
-  String get updateInstall => 'Install';
 
   @override
   String get maintenanceTitle => 'Under Maintenance';

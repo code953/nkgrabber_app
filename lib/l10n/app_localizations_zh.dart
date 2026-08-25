@@ -199,9 +199,6 @@ class SZh extends S {
   String get settingsDiagnosticsHint => '导出前将强制脱敏，请导出后自行复核';
 
   @override
-  String get settingsCheckUpdate => '检查更新';
-
-  @override
   String get settingsUnbind => '解绑设备';
 
   @override
@@ -211,29 +208,6 @@ class SZh extends S {
   String settingsUnbindCooldown(String time) {
     return '冷却中，$time 后可重新绑定';
   }
-
-  @override
-  String get updateTitle => '版本更新';
-
-  @override
-  String updateAvailable(String version) {
-    return '发现新版本 $version';
-  }
-
-  @override
-  String get updateMandatory => '此版本为强制更新';
-
-  @override
-  String get updateDownload => '下载更新';
-
-  @override
-  String get updateVerifying => '校验中...';
-
-  @override
-  String get updateVerifyFailed => '文件校验失败，请重新下载';
-
-  @override
-  String get updateInstall => '安装更新';
 
   @override
   String get maintenanceTitle => '系统维护中';

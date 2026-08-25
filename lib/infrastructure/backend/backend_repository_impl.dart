@@ -8,7 +8,6 @@ import 'package:dio/dio.dart';
 import 'package:nkgrabber/core/errors/app_exception.dart';
 import 'package:nkgrabber/infrastructure/backend/backend_repository.dart';
 import 'package:nkgrabber/infrastructure/backend/dtos/app_config_dto.dart';
-import 'package:nkgrabber/infrastructure/backend/dtos/latest_release_dto.dart';
 import 'package:nkgrabber/infrastructure/backend/dtos/license_activation_dto.dart';
 import 'package:nkgrabber/infrastructure/backend/dtos/license_validation_dto.dart';
 
@@ -77,31 +76,6 @@ class BackendRepositoryImpl implements BackendRepository {
     );
     final data = _extractData(response);
     return AppConfigDto.fromJson(data);
-  }
-
-  @override
-  Future<LatestReleaseDto?> checkUpdate({
-    required String platform,
-    required String arch,
-    required String currentVersion,
-    required String channel,
-  }) async {
-    final response = await _dio.get<Map<String, dynamic>>(
-      '/app/releases/latest',
-      queryParameters: {
-        'platform': platform,
-        'arch': arch,
-        'currentVersion': currentVersion,
-        'channel': channel,
-      },
-    );
-    final body = response.data;
-    if (body == null) return null;
-
-    final data = body['data'];
-    if (data == null) return null;
-
-    return LatestReleaseDto.fromJson(data as Map<String, dynamic>);
   }
 
   /// Extract the `data` field from a successful response.

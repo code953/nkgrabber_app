@@ -24,7 +24,6 @@ class AppRoutes {
   static const courses = '/home/courses';
   static const grabber = '/home/grabber';
   static const settings = '/home/settings';
-  static const update = '/update';
 }
 
 /// Create the app router.

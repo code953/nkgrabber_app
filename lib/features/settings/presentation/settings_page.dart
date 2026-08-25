@@ -1,7 +1,7 @@
 /// Settings page.
 ///
 /// Provides UI for theme switching, request interval, diagnostics export,
-/// license unbind, and update checking.
+/// and license unbind.
 library;
 
 import 'package:flutter/material.dart';
@@ -45,13 +45,6 @@ class SettingsPage extends StatelessWidget {
           ),
           const Divider(),
           const _SectionHeader(title: '关于'),
-          ListTile(
-            leading: const Icon(Icons.system_update),
-            title: const Text('检查更新'),
-            onTap: () {
-              // TODO: Manual update check.
-            },
-          ),
           const ListTile(
             leading: Icon(Icons.info_outline),
             title: Text('NKgrabber'),

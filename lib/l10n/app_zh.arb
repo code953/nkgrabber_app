@@ -73,7 +73,6 @@
   "settingsLogLevel": "日志级别",
   "settingsDiagnostics": "导出诊断包",
   "settingsDiagnosticsHint": "导出前将强制脱敏，请导出后自行复核",
-  "settingsCheckUpdate": "检查更新",
   "settingsUnbind": "解绑设备",
   "settingsUnbindConfirm": "确认解绑？解绑后 24 小时内无法绑定新设备。",
   "settingsUnbindCooldown": "冷却中，{time} 后可重新绑定",
@@ -82,18 +81,6 @@
       "time": {"type": "String"}
     }
   },
-  "updateTitle": "版本更新",
-  "updateAvailable": "发现新版本 {version}",
-  "@updateAvailable": {
-    "placeholders": {
-      "version": {"type": "String"}
-    }
-  },
-  "updateMandatory": "此版本为强制更新",
-  "updateDownload": "下载更新",
-  "updateVerifying": "校验中...",
-  "updateVerifyFailed": "文件校验失败，请重新下载",
-  "updateInstall": "安装更新",
   "maintenanceTitle": "系统维护中",
   "maintenanceMessage": "系统正在维护，请稍后重试",
   "versionTooLow": "当前版本过低，请更新后继续使用",

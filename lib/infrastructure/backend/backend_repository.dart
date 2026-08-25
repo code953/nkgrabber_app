@@ -4,7 +4,6 @@
 library;
 
 import 'package:nkgrabber/infrastructure/backend/dtos/app_config_dto.dart';
-import 'package:nkgrabber/infrastructure/backend/dtos/latest_release_dto.dart';
 import 'package:nkgrabber/infrastructure/backend/dtos/license_activation_dto.dart';
 import 'package:nkgrabber/infrastructure/backend/dtos/license_validation_dto.dart';
 
@@ -32,13 +31,5 @@ abstract class BackendRepository {
   Future<AppConfigDto> fetchConfig({
     required String platform,
     required String appVersion,
-  });
-
-  /// Check for app updates.
-  Future<LatestReleaseDto?> checkUpdate({
-    required String platform,
-    required String arch,
-    required String currentVersion,
-    required String channel,
   });
 }

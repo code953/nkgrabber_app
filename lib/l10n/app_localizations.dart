@@ -469,12 +469,6 @@ abstract class S {
   /// **'导出前将强制脱敏，请导出后自行复核'**
   String get settingsDiagnosticsHint;
 
-  /// No description provided for @settingsCheckUpdate.
-  ///
-  /// In zh, this message translates to:
-  /// **'检查更新'**
-  String get settingsCheckUpdate;
-
   /// No description provided for @settingsUnbind.
   ///
   /// In zh, this message translates to:
@@ -492,48 +486,6 @@ abstract class S {
   /// In zh, this message translates to:
   /// **'冷却中，{time} 后可重新绑定'**
   String settingsUnbindCooldown(String time);
-
-  /// No description provided for @updateTitle.
-  ///
-  /// In zh, this message translates to:
-  /// **'版本更新'**
-  String get updateTitle;
-
-  /// No description provided for @updateAvailable.
-  ///
-  /// In zh, this message translates to:
-  /// **'发现新版本 {version}'**
-  String updateAvailable(String version);
-
-  /// No description provided for @updateMandatory.
-  ///
-  /// In zh, this message translates to:
-  /// **'此版本为强制更新'**
-  String get updateMandatory;
-
-  /// No description provided for @updateDownload.
-  ///
-  /// In zh, this message translates to:
-  /// **'下载更新'**
-  String get updateDownload;
-
-  /// No description provided for @updateVerifying.
-  ///
-  /// In zh, this message translates to:
-  /// **'校验中...'**
-  String get updateVerifying;
-
-  /// No description provided for @updateVerifyFailed.
-  ///
-  /// In zh, this message translates to:
-  /// **'文件校验失败，请重新下载'**
-  String get updateVerifyFailed;
-
-  /// No description provided for @updateInstall.
-  ///
-  /// In zh, this message translates to:
-  /// **'安装更新'**
-  String get updateInstall;
 
   /// No description provided for @maintenanceTitle.
   ///
