@@ -30,13 +30,8 @@ class AppTheme {
   static ThemeData simpleLightTheme() {
     return ThemeData(
       useMaterial3: true,
-      colorScheme: ColorScheme.fromSeed(
-        seedColor: _simpleSeedColor,
-      ),
-      appBarTheme: const AppBarTheme(
-        centerTitle: true,
-        elevation: 0,
-      ),
+      colorScheme: ColorScheme.fromSeed(seedColor: _simpleSeedColor),
+      appBarTheme: const AppBarTheme(centerTitle: true, elevation: 0),
       inputDecorationTheme: const InputDecorationTheme(
         border: OutlineInputBorder(),
         filled: true,
@@ -51,10 +46,7 @@ class AppTheme {
         seedColor: _simpleSeedColor,
         brightness: Brightness.dark,
       ),
-      appBarTheme: const AppBarTheme(
-        centerTitle: true,
-        elevation: 0,
-      ),
+      appBarTheme: const AppBarTheme(centerTitle: true, elevation: 0),
       inputDecorationTheme: const InputDecorationTheme(
         border: OutlineInputBorder(),
         filled: true,
@@ -74,10 +66,7 @@ class AppTheme {
         primary: const Color(0xFFE91E63),
         secondary: const Color(0xFF9C27B0),
       ),
-      appBarTheme: const AppBarTheme(
-        centerTitle: true,
-        elevation: 0,
-      ),
+      appBarTheme: const AppBarTheme(centerTitle: true, elevation: 0),
       inputDecorationTheme: const InputDecorationTheme(
         border: OutlineInputBorder(),
         filled: true,
@@ -94,10 +83,7 @@ class AppTheme {
         primary: const Color(0xFFF48FB1),
         secondary: const Color(0xFFCE93D8),
       ),
-      appBarTheme: const AppBarTheme(
-        centerTitle: true,
-        elevation: 0,
-      ),
+      appBarTheme: const AppBarTheme(centerTitle: true, elevation: 0),
       inputDecorationTheme: const InputDecorationTheme(
         border: OutlineInputBorder(),
         filled: true,

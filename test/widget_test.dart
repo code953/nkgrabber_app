@@ -369,10 +369,7 @@ void main() {
     test('campusNow adjusts backward for a negative offset', () {
       const status = ClockSyncStatus(campusOffsetMs: -5000);
       final now = DateTime.now().toUtc();
-      expect(
-        status.campusNow.difference(now).inMilliseconds,
-        lessThan(-4000),
-      );
+      expect(status.campusNow.difference(now).inMilliseconds, lessThan(-4000));
     });
   });
 

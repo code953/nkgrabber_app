@@ -33,11 +33,11 @@ class GrabberEngine {
     required int maxConcurrentAccounts,
     required int minRequestIntervalMs,
     required int userIntervalMs,
-  })  : _courseTargetDao = courseTargetDao,
-        _grabTaskDao = grabTaskDao,
-        _adapterResolver = adapterResolver,
-        _maxConcurrent = maxConcurrentAccounts,
-        _effectiveIntervalMs = max(userIntervalMs, minRequestIntervalMs);
+  }) : _courseTargetDao = courseTargetDao,
+       _grabTaskDao = grabTaskDao,
+       _adapterResolver = adapterResolver,
+       _maxConcurrent = maxConcurrentAccounts,
+       _effectiveIntervalMs = max(userIntervalMs, minRequestIntervalMs);
 
   final CourseTargetDao _courseTargetDao;
   final GrabTaskDao _grabTaskDao;
@@ -67,12 +67,14 @@ class GrabberEngine {
       return;
     }
 
-    _updateState(_state.copyWith(
-      status: GrabberStatus.preparing,
-      clearMessage: true,
-      startedAt: DateTime.now().toUtc(),
-      activeAccountIds: accountIds,
-    ));
+    _updateState(
+      _state.copyWith(
+        status: GrabberStatus.preparing,
+        clearMessage: true,
+        startedAt: DateTime.now().toUtc(),
+        activeAccountIds: accountIds,
+      ),
+    );
 
     // Step 1: Gather targets per account.
     final accountTargets = <String, List<CourseTargetEntry>>{};
@@ -87,17 +89,18 @@ class GrabberEngine {
     }
 
     if (accountTargets.isEmpty) {
-      _updateState(_state.copyWith(
-        status: GrabberStatus.failed,
-        message: '没有可用的课程目标',
-      ));
+      _updateState(
+        _state.copyWith(status: GrabberStatus.failed, message: '没有可用的课程目标'),
+      );
       return;
     }
 
-    _updateState(_state.copyWith(
-      status: GrabberStatus.running,
-      totalTargets: totalTargets,
-    ));
+    _updateState(
+      _state.copyWith(
+        status: GrabberStatus.running,
+        totalTargets: totalTargets,
+      ),
+    );
 
     // Step 2: Start 30-minute timeout timer.
     _timeoutTimer = Timer(
@@ -131,16 +134,20 @@ class GrabberEngine {
         onTargetResult: (targetId, {required bool success, String? message}) {
           if (success) {
             completedTargets.add(targetId);
-            _updateState(_state.copyWith(
-              completedTargets: List.from(completedTargets),
-              successCount: completedTargets.length,
-            ));
+            _updateState(
+              _state.copyWith(
+                completedTargets: List.from(completedTargets),
+                successCount: completedTargets.length,
+              ),
+            );
           } else {
             failedTargets.add(targetId);
-            _updateState(_state.copyWith(
-              failedTargets: List.from(failedTargets),
-              failedCount: failedTargets.length,
-            ));
+            _updateState(
+              _state.copyWith(
+                failedTargets: List.from(failedTargets),
+                failedCount: failedTargets.length,
+              ),
+            );
           }
         },
       );
@@ -181,8 +188,8 @@ class GrabberEngine {
 
     final finalStatus = _state.status == GrabberStatus.running
         ? (completedTargets.length == totalTargets
-            ? GrabberStatus.success
-            : GrabberStatus.failed)
+              ? GrabberStatus.success
+              : GrabberStatus.failed)
         : _state.status; // Preserve stopped/interrupted/etc.
 
     final finalMessage = finalStatus == GrabberStatus.success
@@ -190,10 +197,7 @@ class GrabberEngine {
         : '完成 ${completedTargets.length}/$totalTargets';
 
     if (_state.status == GrabberStatus.running) {
-      _updateState(_state.copyWith(
-        status: finalStatus,
-        message: finalMessage,
-      ));
+      _updateState(_state.copyWith(status: finalStatus, message: finalMessage));
     }
 
     // Finalize task records.
@@ -206,11 +210,13 @@ class GrabberEngine {
           id: Value(taskId),
           status: Value(_grabTaskStatusFrom(finalStatus)),
           stoppedAt: Value(stoppedAt),
-          lastResultJson: Value(jsonEncode({
-            'completed': completedTargets.length,
-            'failed': failedTargets.length,
-            'total': totalTargets,
-          })),
+          lastResultJson: Value(
+            jsonEncode({
+              'completed': completedTargets.length,
+              'failed': failedTargets.length,
+              'total': totalTargets,
+            }),
+          ),
         ),
       );
     }
@@ -227,10 +233,9 @@ class GrabberEngine {
     _timeoutTimer?.cancel();
     _timeoutTimer = null;
 
-    _updateState(_state.copyWith(
-      status: GrabberStatus.stopped,
-      message: '已手动停止',
-    ));
+    _updateState(
+      _state.copyWith(status: GrabberStatus.stopped, message: '已手动停止'),
+    );
   }
 
   /// Pause the grabber.
@@ -241,10 +246,7 @@ class GrabberEngine {
       worker.cancel();
     }
 
-    _updateState(_state.copyWith(
-      status: GrabberStatus.paused,
-      message: '已暂停',
-    ));
+    _updateState(_state.copyWith(status: GrabberStatus.paused, message: '已暂停'));
   }
 
   /// Reset to idle state.
@@ -274,10 +276,9 @@ class GrabberEngine {
     for (final worker in _workers.values) {
       worker.cancel();
     }
-    _updateState(_state.copyWith(
-      status: GrabberStatus.stopped,
-      message: '已达到30分钟运行上限',
-    ));
+    _updateState(
+      _state.copyWith(status: GrabberStatus.stopped, message: '已达到30分钟运行上限'),
+    );
   }
 
   /// Map grabber status to a task DB status.

@@ -24,10 +24,7 @@ class LoginResult {
 
 /// Student identity from a validated session.
 class StudentProfile {
-  const StudentProfile({
-    required this.studentNo,
-    required this.studentName,
-  });
+  const StudentProfile({required this.studentNo, required this.studentName});
 
   final String studentNo;
   final String studentName;
@@ -99,10 +96,7 @@ class Course {
 
 /// A record of an already-selected course (for idempotency check).
 class SelectionRecord {
-  const SelectionRecord({
-    required this.kmh,
-    required this.courseName,
-  });
+  const SelectionRecord({required this.kmh, required this.courseName});
 
   /// Course number of the already-selected course.
   final String kmh;
@@ -149,10 +143,7 @@ class SubmitResult {
 
 /// Result of a withdraw operation.
 class WithdrawResult {
-  const WithdrawResult({
-    required this.success,
-    this.message,
-  });
+  const WithdrawResult({required this.success, this.message});
 
   final bool success;
   final String? message;

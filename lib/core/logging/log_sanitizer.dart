@@ -20,10 +20,7 @@ class LogSanitizer {
     // Generic cookie header
     RegExp(r'cookie\s*:\s*\S+', caseSensitive: false),
     // Authorization header value
-    RegExp(
-      r'(?:authorization|x-device-token)\s*:\s*\S+',
-      caseSensitive: false,
-    ),
+    RegExp(r'(?:authorization|x-device-token)\s*:\s*\S+', caseSensitive: false),
     // deviceToken in JSON
     RegExp(r'"deviceToken"\s*:\s*"[^"]*"'),
     // licenseCode in JSON

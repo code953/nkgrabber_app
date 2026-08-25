@@ -45,10 +45,7 @@ class _IdleView extends StatelessWidget {
             color: Theme.of(context).colorScheme.primary,
           ),
           const SizedBox(height: 24),
-          Text(
-            '准备就绪',
-            style: Theme.of(context).textTheme.headlineSmall,
-          ),
+          Text('准备就绪', style: Theme.of(context).textTheme.headlineSmall),
           const SizedBox(height: 8),
           const Text('配置好账号和课程目标后，点击开始按钮'),
           const SizedBox(height: 32),
@@ -88,8 +85,7 @@ class GrabberProgressView extends StatelessWidget {
           const SizedBox(height: 24),
           LinearProgressIndicator(
             value: state.totalTargets > 0
-                ? (state.successCount + state.failedCount) /
-                    state.totalTargets
+                ? (state.successCount + state.failedCount) / state.totalTargets
                 : null,
           ),
           const SizedBox(height: 16),
@@ -102,9 +98,7 @@ class GrabberProgressView extends StatelessWidget {
             const SizedBox(height: 12),
             Text(
               state.message!,
-              style: TextStyle(
-                color: Theme.of(context).colorScheme.outline,
-              ),
+              style: TextStyle(color: Theme.of(context).colorScheme.outline),
             ),
           ],
           const Spacer(),
@@ -145,25 +139,13 @@ class _StatusHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final (icon, label, color) = switch (state.status) {
       GrabberStatus.idle => (Icons.rocket_launch_outlined, '空闲', Colors.grey),
-      GrabberStatus.preparing => (
-          Icons.hourglass_top,
-          '准备中...',
-          Colors.orange,
-        ),
-      GrabberStatus.running => (
-          Icons.autorenew,
-          '抢课中...',
-          Colors.blue,
-        ),
+      GrabberStatus.preparing => (Icons.hourglass_top, '准备中...', Colors.orange),
+      GrabberStatus.running => (Icons.autorenew, '抢课中...', Colors.blue),
       GrabberStatus.success => (Icons.check_circle, '全部成功', Colors.green),
       GrabberStatus.paused => (Icons.pause_circle, '已暂停', Colors.amber),
       GrabberStatus.stopped => (Icons.stop_circle, '已停止', Colors.grey),
       GrabberStatus.interrupted => (Icons.warning, '异常中断', Colors.red),
-      GrabberStatus.captchaRequired => (
-          Icons.security,
-          '需要验证码',
-          Colors.amber,
-        ),
+      GrabberStatus.captchaRequired => (Icons.security, '需要验证码', Colors.amber),
       GrabberStatus.failed => (Icons.error, '失败', Colors.red),
     };
 
@@ -174,9 +156,9 @@ class _StatusHeader extends StatelessWidget {
         const SizedBox(width: 12),
         Text(
           label,
-          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                color: color,
-              ),
+          style: Theme.of(
+            context,
+          ).textTheme.headlineSmall?.copyWith(color: color),
         ),
       ],
     );

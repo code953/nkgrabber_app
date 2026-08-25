@@ -2,7 +2,9 @@
 
 ## Project Overview
 
-NKgrabber is a Flutter course-grabbing client for Chinese university students. It supports 5 platforms: Android, Windows, Linux, macOS, and iOS. The core flow is: license activation → account management → course target configuration → scheduled submission → version updates.
+NKgrabber is a Flutter course-grabbing client for Chinese university students. It supports 5 platforms: Android, Windows, Linux, macOS, and iOS. The core flow is: account management → course target configuration → scheduled submission.
+
+The client is **fully offline** apart from the campus system itself. There is no license activation, no update check, no crash reporting, and no remote config — those were removed deliberately, so do not reintroduce a backend HTTP client.
 
 ## Build & Run
 
@@ -10,8 +12,11 @@ NKgrabber is a Flutter course-grabbing client for Chinese university students. I
 # Install dependencies
 flutter pub get
 
-# Generate Drift/freezed code (required after schema changes)
+# Generate Drift code (required after schema changes)
 dart run build_runner build --delete-conflicting-outputs
+
+# Regenerate localizations (required after editing lib/l10n/*.arb)
+flutter gen-l10n
 
 # Run tests
 flutter test
@@ -31,58 +36,55 @@ flutter build ios --no-codesign # iOS (build verify only)
 
 ```
 lib/
-  app/              # Router, shell, theme, startup page
+  app/              # Router, shell page, theme
   core/
-    errors/         # AppException sealed hierarchy, CrashReporter
+    errors/         # AppException sealed hierarchy
     logging/        # AppLogger (logging package), LogSanitizer
-    network/        # BackendApiClient + 6 interceptors
     security/       # SecureStorage interface + FlutterSecureStorage impl
     utils/          # AppConstants, extensions, DiagnosticsExporter
   features/
     accounts/       # AccountsNotifier, AccountsPage, AddAccountSheet
     courses/        # CourseTargetsNotifier, CourseConfigPage
     grabber/        # GrabberEngine, AccountWorker, RetryClassifier, GrabberPage
-    license/        # LicenseNotifier, StartupChecker, ActivationPage
-    settings/       # ConsentPage, SettingsPage
-    updater/        # UpdateChecker, UpdateVerifier, UpdatePage
+    settings/       # SettingsPage
   infrastructure/
-    backend/        # BackendRepository + impl, DTOs
     campus/         # CampusAdapter + impl, RSA, GBK, models, clock sync
-    database/       # AppDatabase (Drift), 5 tables, 5 DAOs, connection
+    database/       # AppDatabase (Drift), 4 tables, 4 DAOs, connection
   l10n/             # app_zh.arb (primary), app_en.arb (placeholder)
 ```
 
+`main.dart` installs `FlutterError.onError` + `runZonedGuarded`; both write sanitized messages to the local log and send nothing over the network.
+
 ## Key Technical Constraints
 
-- **Two completely isolated HTTP clients**: campus (`http://campus.nks.edu.cn`, GBK, form POST) and backend (`https://nkgrabber.code953.top/api/v1`, JSON). Never mix cookies or sessions.
+- **One HTTP target only**: the campus system (`http://campus.nks.edu.cn`, GBK, form POST). There is no business backend — do not add one.
 - **Per-account isolation**: each campus account gets its own `Dio` + in-memory `CookieJar`. Cookies never touch disk.
-- **Secure storage only**: passwords, cookies, `deviceToken` live in platform secure storage (Android Keystore / iOS Keychain / Windows DPAPI / Linux Secret Service). Drift only stores reference keys.
-- **Log sanitization**: all log output passes through `LogSanitizer` before emission. Passwords, cookies, Bearer tokens, activation codes, `deviceToken`, `licenseCode` are replaced with `[REDACTED]`.
-- **Grabber state machine**: `idle → preparing → running → success/paused/stopped/interrupted/authExpired/captchaRequired/failed`. No auto-recovery after `interrupted`. 30-minute hard timeout.
-- **effectiveIntervalMs = max(userIntervalMs, plan.minRequestIntervalMs)** — jitter is upward only, never below the floor.
+- **Secure storage only**: passwords and cookies live in platform secure storage (Android Keystore / iOS Keychain / Windows DPAPI / Linux Secret Service). Drift only stores reference keys.
+- **Log sanitization**: all log output passes through `LogSanitizer` before emission. Passwords, cookies, Bearer tokens, activation codes, `deviceToken`, `licenseCode` are replaced with `[REDACTED]`. The last three patterns are kept even though the online business is gone — removing a redaction rule is never an improvement.
+- **Grabber state machine**: `idle → preparing → running → success/paused/stopped/interrupted/captchaRequired/failed`. No auto-recovery after `interrupted`. 30-minute hard timeout.
+- **effectiveIntervalMs = max(userIntervalMs, settings.minRequestIntervalMs)** — jitter is upward only, never below the floor. Both values come from `app_settings`.
 - **xkms validation**: unknown values (`!= "1"|"2"|"3"`) → mark target `failed`, never submit with a default.
 
-## Database Schema (Drift, schemaVersion=1)
+## Database Schema (Drift, schemaVersion=3)
 
 | Table | PK | Notes |
 |---|---|---|
 | `accounts` | UUID TEXT | `cascade` FK owner of CourseTarget and GrabTask |
 | `course_targets` | UUID TEXT | FK → accounts(id) ON DELETE CASCADE |
 | `grab_tasks` | UUID TEXT | FK → accounts(id) ON DELETE CASCADE |
-| `license_snapshots` | id=1 (singleton) | upsert only, cleared on deactivate |
-| `app_settings` | id=1 (singleton) | created with defaults on first read |
+| `app_settings` | id=1 (singleton) | created with defaults on first read; holds `userIntervalMs`, `minRequestIntervalMs`, `maxAccounts`, `maxConcurrentAccounts` |
 
 Indexes: `idx_course_target_account_xkid`, `idx_grab_task_account_status`.
+
+Migration history: v1→v2 dropped `license_snapshots`; v2→v3 added the three limit columns and rebuilt `app_settings` to drop `update_channel` / `crash_reporting_enabled`.
 
 After any schema change, bump `schemaVersion` and add a migration case in `AppDatabase.migration.onUpgrade`.
 
 ## Code Generation
 
-This project uses `drift_dev`, `freezed`, and `json_serializable`. Run `build_runner` after:
-- Modifying any Drift table or DAO
-- Adding/changing `@freezed` or `@JsonSerializable` classes
+This project uses `drift_dev`. Run `build_runner` after modifying any Drift table or DAO.
 
-Generated files (`*.g.dart`, `*.freezed.dart`) are committed to the repo and excluded from analysis.
+Generated files (`*.g.dart`) are committed to the repo and excluded from analysis. l10n output (`lib/l10n/app_localizations*.dart`) is also committed — run `flutter gen-l10n` after editing an `.arb` file.
 
 ## Import Convention
 
@@ -100,16 +102,15 @@ import '../../core/errors/app_exception.dart';
 Tests live in `test/widget_test.dart`. The suite covers:
 - `AppException` hierarchy
 - `LogSanitizer` (all redaction patterns)
-- `AppConstants` (regex, URLs, timeouts)
+- `AppConstants` (campus URL, timeouts, default-limit consistency)
 - Extensions (`maskExcept`, `toIso8601Utc`, `toHms`)
 - Enums (`AccountStatus`, `GrabTaskStatus`, `LoginType`, `XkmsMode`)
 - `GrabberState` state machine (`isRunning`, `isTerminal`, `copyWith`)
-- `RetryClassifier` (7 decision cases)
-- `ClockSyncStatus` (drift thresholds, `campusNow`)
-- DTOs (`fromJson`, `toJson`, defaults)
-- Interval calculation logic
+- `RetryClassifier` (decision cases)
+- `ClockSyncStatus` (`campusNow` offset in both directions)
+- Interval calculation (`max(userIntervalMs, minRequestIntervalMs)`)
 
-Run with `flutter test`. All 51 tests must pass before committing.
+Run with `flutter test`. All 42 tests must pass before committing. There are still no widget tests.
 
 ## CI/CD
 
@@ -118,14 +119,13 @@ Run with `flutter test`. All 51 tests must pass before committing.
 
 ## Commit Convention
 
-Each phase of work gets its own commit. Use `feat: Phase N - description` format.
+Each phase of work gets its own commit. Use `feat: Phase N - description` format. Write commit messages in Simplified Chinese.
 
 ## Sensitive Data Rules
 
 Never commit or log:
 - Passwords, cookies, `gdpk`, `JSESSIONID`
-- `deviceToken`, activation codes, `licenseCode`
 - Student numbers, real names
-- Course IDs or names in crash reports
+- Course IDs or names
 
-The `.env.example` file documents the Ed25519 public key slot — put the actual key in `assets/keys/` (gitignored in production).
+`.env.example` documents no required variables — the client needs no build-time secrets.

@@ -51,9 +51,9 @@ class AccountsNotifier extends StateNotifier<AccountsState> {
   AccountsNotifier({
     required AccountDao accountDao,
     required SecureStorage secureStorage,
-  })  : _accountDao = accountDao,
-        _secureStorage = secureStorage,
-        super(const AccountsState());
+  }) : _accountDao = accountDao,
+       _secureStorage = secureStorage,
+       super(const AccountsState());
 
   final AccountDao _accountDao;
   final SecureStorage _secureStorage;
@@ -88,10 +88,7 @@ class AccountsNotifier extends StateNotifier<AccountsState> {
       String? credentialRef;
       if (rememberPassword) {
         credentialRef = SecureStorageKeys.accountPassword(id);
-        await _secureStorage.write(
-          key: credentialRef,
-          value: password,
-        );
+        await _secureStorage.write(key: credentialRef, value: password);
       }
 
       // Save cookies to secure storage.
@@ -190,8 +187,7 @@ class AccountsNotifier extends StateNotifier<AccountsState> {
   /// When slots are freed, re-enables from oldest to newest.
   Future<void> enforceAccountLimit(int maxAccounts) async {
     final accounts = await _accountDao.getAll();
-    final enabledCount =
-        accounts.where((a) => a.enabled).length;
+    final enabledCount = accounts.where((a) => a.enabled).length;
 
     if (enabledCount > maxAccounts) {
       // Disable excess accounts from newest to oldest.
@@ -212,12 +208,13 @@ class AccountsNotifier extends StateNotifier<AccountsState> {
       }
     } else if (enabledCount < maxAccounts) {
       // Re-enable disabled accounts from oldest to newest.
-      final disabled = accounts
-          .where(
-            (a) => !a.enabled && a.status == AccountStatus.disabledByPlan,
-          )
-          .toList()
-        ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+      final disabled =
+          accounts
+              .where(
+                (a) => !a.enabled && a.status == AccountStatus.disabledByPlan,
+              )
+              .toList()
+            ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
 
       final toEnable = maxAccounts - enabledCount;
       for (var i = 0; i < toEnable && i < disabled.length; i++) {

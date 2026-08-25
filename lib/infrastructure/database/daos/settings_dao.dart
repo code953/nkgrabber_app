@@ -16,29 +16,26 @@ class SettingsDao extends DatabaseAccessor<AppDatabase>
 
   /// Get current settings (creates default row if absent).
   Future<AppSettingsEntry> get() async {
-    final existing =
-        await (select(appSettings)..where((t) => t.id.equals(1)))
-            .getSingleOrNull();
+    final existing = await (select(
+      appSettings,
+    )..where((t) => t.id.equals(1))).getSingleOrNull();
     if (existing != null) return existing;
 
     // Create default settings row.
-    await into(appSettings).insert(
-      AppSettingsCompanion.insert(),
-    );
+    await into(appSettings).insert(AppSettingsCompanion.insert());
     return (select(appSettings)..where((t) => t.id.equals(1))).getSingle();
   }
 
   /// Watch settings for reactive UI updates.
   Stream<AppSettingsEntry> watch() {
-    return (select(appSettings)..where((t) => t.id.equals(1)))
-        .watchSingle();
+    return (select(appSettings)..where((t) => t.id.equals(1))).watchSingle();
   }
 
   /// Update settings (always row id=1).
   Future<void> update_(AppSettingsCompanion entry) {
-    return (update(appSettings)..where((t) => t.id.equals(1))).write(
-      entry.copyWith(id: const Value(1)),
-    );
+    return (update(
+      appSettings,
+    )..where((t) => t.id.equals(1))).write(entry.copyWith(id: const Value(1)));
   }
 
   /// Update theme.

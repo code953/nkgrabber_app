@@ -13,9 +13,7 @@ class SecureStorageImpl implements SecureStorage {
 
   static FlutterSecureStorage _createStorage() {
     // Platform-specific options for optimal security
-    const androidOptions = AndroidOptions(
-      encryptedSharedPreferences: true,
-    );
+    const androidOptions = AndroidOptions(encryptedSharedPreferences: true);
     const iOSOptions = IOSOptions(
       accessibility: KeychainAccessibility.first_unlock,
     );

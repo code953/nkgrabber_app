@@ -11,10 +11,7 @@ import 'package:nkgrabber/infrastructure/database/daos/grab_task_dao.dart';
 
 /// Represents a diagnostics export package.
 class DiagnosticsPackage {
-  const DiagnosticsPackage({
-    required this.tasks,
-    required this.exportedAt,
-  });
+  const DiagnosticsPackage({required this.tasks, required this.exportedAt});
 
   final List<Map<String, dynamic>> tasks;
   final String exportedAt;
@@ -33,7 +30,7 @@ class DiagnosticsPackage {
 
 class DiagnosticsExporter {
   DiagnosticsExporter({required GrabTaskDao grabTaskDao})
-      : _grabTaskDao = grabTaskDao;
+    : _grabTaskDao = grabTaskDao;
 
   final GrabTaskDao _grabTaskDao;
 

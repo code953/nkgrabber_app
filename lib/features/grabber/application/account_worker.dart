@@ -15,11 +15,8 @@ import 'package:nkgrabber/infrastructure/campus/xkms_enum.dart';
 import 'package:nkgrabber/infrastructure/database/app_database.dart';
 
 /// Callback for reporting target result.
-typedef TargetResultCallback = void Function(
-  String targetId, {
-  required bool success,
-  String? message,
-});
+typedef TargetResultCallback =
+    void Function(String targetId, {required bool success, String? message});
 
 /// A worker that processes targets for a single account.
 class AccountWorker {

@@ -34,10 +34,7 @@ class _CourseConfigBody extends StatelessWidget {
             color: Theme.of(context).colorScheme.outline,
           ),
           const SizedBox(height: 16),
-          Text(
-            '选择课程目标',
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
+          Text('选择课程目标', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
           const Text('请先添加账号，然后选择要抢的课程'),
           const SizedBox(height: 24),
@@ -77,10 +74,7 @@ class TargetListCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Card(
       child: ListTile(
-        leading: Switch(
-          value: enabled,
-          onChanged: onToggle,
-        ),
+        leading: Switch(value: enabled, onChanged: onToggle),
         title: Text(courseName),
         subtitle: Text('$batchName · $xkms'),
         trailing: IconButton(

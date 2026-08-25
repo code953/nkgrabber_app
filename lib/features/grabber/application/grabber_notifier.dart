@@ -12,8 +12,8 @@ import 'package:nkgrabber/features/grabber/domain/grabber_state.dart';
 /// Notifier wrapping the grabber engine for Riverpod.
 class GrabberNotifier extends StateNotifier<GrabberState> {
   GrabberNotifier({required GrabberEngine engine})
-      : _engine = engine,
-        super(const GrabberState()) {
+    : _engine = engine,
+      super(const GrabberState()) {
     _subscription = _engine.stateStream.listen((engineState) {
       state = engineState;
     });

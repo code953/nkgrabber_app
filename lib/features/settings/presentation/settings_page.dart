@@ -61,8 +61,8 @@ class _SectionHeader extends StatelessWidget {
       child: Text(
         title,
         style: Theme.of(context).textTheme.labelLarge?.copyWith(
-              color: Theme.of(context).colorScheme.primary,
-            ),
+          color: Theme.of(context).colorScheme.primary,
+        ),
       ),
     );
   }
@@ -117,10 +117,10 @@ class _ThemeSettingState extends State<_ThemeSetting> {
 
 extension on AppThemeMode {
   String get label => switch (this) {
-        AppThemeMode.simple => '简约 (蓝色)',
-        AppThemeMode.anime => '二次元 (粉紫)',
-        AppThemeMode.system => '跟随系统',
-      };
+    AppThemeMode.simple => '简约 (蓝色)',
+    AppThemeMode.anime => '二次元 (粉紫)',
+    AppThemeMode.system => '跟随系统',
+  };
 }
 
 /// A slider-backed numeric setting row.

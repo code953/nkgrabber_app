@@ -4,11 +4,13 @@
 
 ## 功能
 
-- 授权激活与校验
 - 多账号管理（密码/Cookie 模式）
 - 课程目标配置与优先级
 - 受控自动提交调度
-- 安全更新与崩溃上报
+- 本地设置：请求间隔、间隔下限、账号数与并发上限
+
+除学校选课系统本身，客户端不与任何服务端通信 —— 无授权激活、无检查更新、
+无崩溃上报、无远程配置。
 
 ## 技术栈
 
@@ -70,24 +72,20 @@ flutter build linux
 
 ```
 lib/
-├─ app/                    # 启动、主题、路由、全局 Provider
+├─ app/                    # 主题、路由、Shell 页
 ├─ core/
 │  ├─ errors/             # AppException 与错误映射
 │  ├─ logging/            # 脱敏日志
-│  ├─ network/            # BackendApiClient 基础设施
 │  ├─ security/           # 平台安全存储
 │  └─ utils/
 ├─ features/
-│  ├─ license/            # 激活与授权
 │  ├─ accounts/           # 账号管理
 │  ├─ courses/            # 课程设置
 │  ├─ grabber/            # 抢课调度器
-│  ├─ settings/           # 设置
-│  └─ updater/            # 更新
+│  └─ settings/           # 设置
 ├─ infrastructure/
 │  ├─ database/           # Drift 表、DAO、迁移
-│  ├─ campus/             # 学校系统适配器
-│  └─ backend/            # 服务端 DTO 与 Repository
+│  └─ campus/             # 学校系统适配器
 └─ main.dart
 ```
 
@@ -103,10 +101,10 @@ lib/
 
 ## 安全说明
 
-- 密码、Cookie、设备令牌仅存储在平台安全存储中
+- 密码与 Cookie 仅存储在平台安全存储中，Cookie 不落盘
+- 每个账号使用独立的 Dio 实例与内存 CookieJar，会话互不干扰
 - 日志自动脱敏，不输出敏感信息
-- 更新包经 SHA-256 + Ed25519 签名双重校验
-- 学校账号数据不上传业务服务端
+- 学校账号数据不上传任何服务端 —— 客户端只与学校选课系统通信
 
 ## 许可
 

@@ -32,15 +32,14 @@ class GrabTaskDao extends DatabaseAccessor<AppDatabase>
 
   /// Get tasks by status (across all accounts).
   Future<List<GrabTaskEntry>> getByStatus(GrabTaskStatus status) {
-    return (select(grabTasks)
-          ..where((t) => t.status.equalsValue(status)))
-        .get();
+    return (select(
+      grabTasks,
+    )..where((t) => t.status.equalsValue(status))).get();
   }
 
   /// Get a single task by ID.
   Future<GrabTaskEntry?> getById(String id) {
-    return (select(grabTasks)..where((t) => t.id.equals(id)))
-        .getSingleOrNull();
+    return (select(grabTasks)..where((t) => t.id.equals(id))).getSingleOrNull();
   }
 
   /// Get the most recent task for an account (regardless of status).
@@ -54,12 +53,11 @@ class GrabTaskDao extends DatabaseAccessor<AppDatabase>
 
   /// Get all running/preparing tasks (for crash recovery detection).
   Future<List<GrabTaskEntry>> getActiveTasks() {
-    return (select(grabTasks)
-          ..where(
-            (t) =>
-                t.status.equalsValue(GrabTaskStatus.running) |
-                t.status.equalsValue(GrabTaskStatus.preparing),
-          ))
+    return (select(grabTasks)..where(
+          (t) =>
+              t.status.equalsValue(GrabTaskStatus.running) |
+              t.status.equalsValue(GrabTaskStatus.preparing),
+        ))
         .get();
   }
 
@@ -84,18 +82,17 @@ class GrabTaskDao extends DatabaseAccessor<AppDatabase>
 
   /// Mark running/preparing tasks as interrupted (for crash recovery).
   Future<int> markActiveAsInterrupted() {
-    return (update(grabTasks)
-          ..where(
-            (t) =>
-                t.status.equalsValue(GrabTaskStatus.running) |
-                t.status.equalsValue(GrabTaskStatus.preparing),
-          ))
+    return (update(grabTasks)..where(
+          (t) =>
+              t.status.equalsValue(GrabTaskStatus.running) |
+              t.status.equalsValue(GrabTaskStatus.preparing),
+        ))
         .write(
-      GrabTasksCompanion(
-        status: const Value(GrabTaskStatus.interrupted),
-        stoppedAt: Value(DateTime.now().toUtc().toIso8601String()),
-      ),
-    );
+          GrabTasksCompanion(
+            status: const Value(GrabTaskStatus.interrupted),
+            stoppedAt: Value(DateTime.now().toUtc().toIso8601String()),
+          ),
+        );
   }
 
   /// Delete a task by ID.

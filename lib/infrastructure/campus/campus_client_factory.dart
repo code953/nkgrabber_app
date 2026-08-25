@@ -14,8 +14,8 @@ import 'package:nkgrabber/core/utils/constants.dart';
 /// An isolated HTTP client for a single campus account.
 class CampusClient {
   CampusClient({String? accountId})
-      : _cookieJar = CookieJar(),
-        _accountId = accountId ?? 'unknown' {
+    : _cookieJar = CookieJar(),
+      _accountId = accountId ?? 'unknown' {
     _dio = Dio(
       BaseOptions(
         baseUrl: AppConstants.campusBaseUrl,

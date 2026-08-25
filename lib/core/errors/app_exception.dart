@@ -75,18 +75,10 @@ class StorageException extends AppException {
   final StorageExceptionType type;
 }
 
-enum StorageExceptionType {
-  readFailed,
-  writeFailed,
-  deleteFailed,
-  unavailable,
-}
+enum StorageExceptionType { readFailed, writeFailed, deleteFailed, unavailable }
 
 // -- Unknown -----------------------------------------------------------------
 
 class UnknownException extends AppException {
-  const UnknownException({
-    required super.message,
-    super.originalError,
-  });
+  const UnknownException({required super.message, super.originalError});
 }

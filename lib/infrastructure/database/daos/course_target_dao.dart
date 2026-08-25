@@ -33,18 +33,16 @@ class CourseTargetDao extends DatabaseAccessor<AppDatabase>
   /// Get all enabled targets for a given account.
   Future<List<CourseTargetEntry>> getEnabledByAccount(String accountId) {
     return (select(courseTargets)
-          ..where(
-            (t) =>
-                t.accountId.equals(accountId) & t.enabled.equals(true),
-          )
+          ..where((t) => t.accountId.equals(accountId) & t.enabled.equals(true))
           ..orderBy([(t) => OrderingTerm.asc(t.priority)]))
         .get();
   }
 
   /// Get a single target by ID.
   Future<CourseTargetEntry?> getById(String id) {
-    return (select(courseTargets)..where((t) => t.id.equals(id)))
-        .getSingleOrNull();
+    return (select(
+      courseTargets,
+    )..where((t) => t.id.equals(id))).getSingleOrNull();
   }
 
   /// Check if a target with the same accountId+xkid already exists.
@@ -53,9 +51,7 @@ class CourseTargetDao extends DatabaseAccessor<AppDatabase>
     String xkid,
   ) {
     return (select(courseTargets)
-          ..where(
-            (t) => t.accountId.equals(accountId) & t.xkid.equals(xkid),
-          ))
+          ..where((t) => t.accountId.equals(accountId) & t.xkid.equals(xkid)))
         .getSingleOrNull();
   }
 
@@ -85,9 +81,9 @@ class CourseTargetDao extends DatabaseAccessor<AppDatabase>
 
   /// Delete all targets for an account.
   Future<int> deleteByAccount(String accountId) {
-    return (delete(courseTargets)
-          ..where((t) => t.accountId.equals(accountId)))
-        .go();
+    return (delete(
+      courseTargets,
+    )..where((t) => t.accountId.equals(accountId))).go();
   }
 
   /// Count targets for an account.

@@ -43,9 +43,9 @@ class CourseTargetsNotifier extends StateNotifier<CourseTargetsState> {
   CourseTargetsNotifier({
     required CourseTargetDao courseTargetDao,
     required String accountId,
-  })  : _dao = courseTargetDao,
-        _accountId = accountId,
-        super(const CourseTargetsState());
+  }) : _dao = courseTargetDao,
+       _accountId = accountId,
+       super(const CourseTargetsState());
 
   final CourseTargetDao _dao;
   final String _accountId;
@@ -117,10 +117,7 @@ class CourseTargetsNotifier extends StateNotifier<CourseTargetsState> {
   /// Toggle target enabled state.
   Future<void> toggleEnabled(String id, {required bool enabled}) async {
     await _dao.updateTarget(
-      CourseTargetsCompanion(
-        id: Value(id),
-        enabled: Value(enabled),
-      ),
+      CourseTargetsCompanion(id: Value(id), enabled: Value(enabled)),
     );
     await load();
   }
@@ -136,10 +133,7 @@ class CourseTargetsNotifier extends StateNotifier<CourseTargetsState> {
     // Update all priorities.
     for (var i = 0; i < targets.length; i++) {
       await _dao.updateTarget(
-        CourseTargetsCompanion(
-          id: Value(targets[i].id),
-          priority: Value(i),
-        ),
+        CourseTargetsCompanion(id: Value(targets[i].id), priority: Value(i)),
       );
     }
     await load();

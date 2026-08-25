@@ -8,10 +8,7 @@ library;
 import 'package:drift/drift.dart';
 
 /// Account login type.
-enum LoginType {
-  password,
-  cookie,
-}
+enum LoginType { password, cookie }
 
 /// Account status reflecting campus session health.
 enum AccountStatus {

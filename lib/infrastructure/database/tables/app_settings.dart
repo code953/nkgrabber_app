@@ -12,12 +12,10 @@ class AppSettings extends Table {
   IntColumn get id => integer().withDefault(const Constant(1))();
 
   /// UI theme: 'simple', 'anime', or 'system'.
-  TextColumn get theme =>
-      text().withDefault(const Constant('system'))();
+  TextColumn get theme => text().withDefault(const Constant('system'))();
 
   /// User-configured request interval in milliseconds.
-  IntColumn get userIntervalMs =>
-      integer().withDefault(const Constant(1000))();
+  IntColumn get userIntervalMs => integer().withDefault(const Constant(1000))();
 
   /// Floor for the request interval (ms).
   ///
@@ -28,20 +26,17 @@ class AppSettings extends Table {
       integer().withDefault(const Constant(800))();
 
   /// Maximum number of simultaneously enabled accounts.
-  IntColumn get maxAccounts =>
-      integer().withDefault(const Constant(5))();
+  IntColumn get maxAccounts => integer().withDefault(const Constant(5))();
 
   /// Maximum number of accounts grabbing in parallel.
   IntColumn get maxConcurrentAccounts =>
       integer().withDefault(const Constant(3))();
 
   /// Minimum log level: 'debug', 'info', 'warn', 'error'.
-  TextColumn get logLevel =>
-      text().withDefault(const Constant('info'))();
+  TextColumn get logLevel => text().withDefault(const Constant('info'))();
 
   /// UI locale code.
-  TextColumn get locale =>
-      text().withDefault(const Constant('zh_CN'))();
+  TextColumn get locale => text().withDefault(const Constant('zh_CN'))();
 
   @override
   Set<Column> get primaryKey => {id};

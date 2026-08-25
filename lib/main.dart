@@ -36,11 +36,7 @@ void main() {
 
   // Capture uncaught async errors from the app's zone.
   runZonedGuarded(
-    () => runApp(
-      const ProviderScope(
-        child: NKGrabberApp(),
-      ),
-    ),
+    () => runApp(const ProviderScope(child: NKGrabberApp())),
     (error, stackTrace) => logger.error(
       LogSanitizer.sanitize(error.toString()),
       error,
@@ -74,10 +70,7 @@ class _NKGrabberAppState extends ConsumerState<NKGrabberApp> {
       themeMode: AppTheme.themeMode(themeMode),
       routerConfig: _router,
       locale: const Locale('zh', 'CN'),
-      supportedLocales: const [
-        Locale('zh', 'CN'),
-        Locale('en', 'US'),
-      ],
+      supportedLocales: const [Locale('zh', 'CN'), Locale('en', 'US')],
     );
   }
 }

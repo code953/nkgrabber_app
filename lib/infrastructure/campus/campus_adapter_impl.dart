@@ -31,15 +31,10 @@ class CampusAdapterImpl implements CampusAdapter {
   int get campusClockOffsetMs => _campusClockOffsetMs;
 
   @override
-  Future<LoginResult> loginWithPassword(
-    String account,
-    String password,
-  ) async {
+  Future<LoginResult> loginWithPassword(String account, String password) async {
     return _queue.add(() async {
       // Step 1: Get login page to extract RSA public key and kid.
-      final welcomeResponse = await _client.dio.get<List<int>>(
-        '/zhxy/welcome',
-      );
+      final welcomeResponse = await _client.dio.get<List<int>>('/zhxy/welcome');
       final html = _decodeResponse(welcomeResponse);
 
       final rsaParams = RsaEncryptor.extractFromHtml(html);
@@ -59,10 +54,9 @@ class CampusAdapterImpl implements CampusAdapter {
       // Step 3: POST login request.
       final loginResponse = await _client.dio.post<List<int>>(
         '/zhxy/rrtlogin/loginWithYzm.jsmeb',
-        data: 'params=${Uri.encodeComponent('[$account,$encryptedPassword,,${rsaParams.kid}]')}',
-        options: Options(
-          contentType: 'application/x-www-form-urlencoded',
-        ),
+        data:
+            'params=${Uri.encodeComponent('[$account,$encryptedPassword,,${rsaParams.kid}]')}',
+        options: Options(contentType: 'application/x-www-form-urlencoded'),
       );
       final loginBody = _decodeAndParseJson(loginResponse);
       _updateClockOffset(loginResponse);
@@ -134,9 +128,7 @@ class CampusAdapterImpl implements CampusAdapter {
       final response = await _client.dio.post<List<int>>(
         '/njs_3033/xsxk/getStudentXkList',
         data: '',
-        options: Options(
-          contentType: 'application/x-www-form-urlencoded',
-        ),
+        options: Options(contentType: 'application/x-www-form-urlencoded'),
       );
       _updateClockOffset(response);
       final body = _decodeAndParseJson(response);
@@ -162,9 +154,7 @@ class CampusAdapterImpl implements CampusAdapter {
       final response = await _client.dio.post<List<int>>(
         '/njs_3033/xsxk_Xbk/getXbkByXkid',
         data: 'xkid=$xkid',
-        options: Options(
-          contentType: 'application/x-www-form-urlencoded',
-        ),
+        options: Options(contentType: 'application/x-www-form-urlencoded'),
       );
       _updateClockOffset(response);
       final body = _decodeAndParseJson(response);
@@ -191,9 +181,7 @@ class CampusAdapterImpl implements CampusAdapter {
       final response = await _client.dio.post<List<int>>(
         '/njs_3033/xsxk_Xbk/getStudentXkJlList',
         data: 'xkid=$xkid',
-        options: Options(
-          contentType: 'application/x-www-form-urlencoded',
-        ),
+        options: Options(contentType: 'application/x-www-form-urlencoded'),
       );
       _updateClockOffset(response);
       final body = _decodeAndParseJson(response);
@@ -215,21 +203,21 @@ class CampusAdapterImpl implements CampusAdapter {
       final kmhDtoList = command.kmhList.join(',');
       final response = await _client.dio.post<List<int>>(
         '/njs_3033/xsxk_Xbk/saveStudentXkJs',
-        data: 'xkid=${command.xkid}'
+        data:
+            'xkid=${command.xkid}'
             '&xkms=${command.xkms}'
             '&sftj=1'
             '&kms=${command.kmhList.length}'
             '&kmhDtoList=$kmhDtoList',
-        options: Options(
-          contentType: 'application/x-www-form-urlencoded',
-        ),
+        options: Options(contentType: 'application/x-www-form-urlencoded'),
       );
       _updateClockOffset(response);
       final body = _decodeAndParseJson(response);
 
       final success = body['status'] == true || body['status'] == 'true';
       final result = body['result'] as Map<String, dynamic>?;
-      final msg = result?['msg']?.toString() ??
+      final msg =
+          result?['msg']?.toString() ??
           body['msg']?.toString() ??
           body['message']?.toString();
 
@@ -238,10 +226,7 @@ class CampusAdapterImpl implements CampusAdapter {
         throw _mapSubmitMessage(msg);
       }
 
-      return SubmitResult(
-        success: success,
-        message: msg,
-      );
+      return SubmitResult(success: success, message: msg);
     });
   }
 
@@ -259,13 +244,15 @@ class CampusAdapterImpl implements CampusAdapter {
         type: CampusExceptionType.courseConflict,
       );
     }
-    if (msg.contains('选课批次') && (msg.contains('未开始') || msg.contains('已结束') || msg.contains('不在时间'))) {
+    if (msg.contains('选课批次') &&
+        (msg.contains('未开始') || msg.contains('已结束') || msg.contains('不在时间'))) {
       return CampusException(
         message: msg,
         type: CampusExceptionType.batchClosed,
       );
     }
-    if (msg.contains('超出') && msg.contains('限制') || msg.contains('学分') && msg.contains('上限')) {
+    if (msg.contains('超出') && msg.contains('限制') ||
+        msg.contains('学分') && msg.contains('上限')) {
       return CampusException(
         message: msg,
         type: CampusExceptionType.limitReached,
@@ -302,9 +289,7 @@ class CampusAdapterImpl implements CampusAdapter {
       final response = await _client.dio.post<List<int>>(
         '/njs_3033/xsxk_Xbk/xschXbkxkCz',
         data: 'xkid=$xkid',
-        options: Options(
-          contentType: 'application/x-www-form-urlencoded',
-        ),
+        options: Options(contentType: 'application/x-www-form-urlencoded'),
       );
       _updateClockOffset(response);
       final body = _decodeAndParseJson(response);
@@ -312,10 +297,7 @@ class CampusAdapterImpl implements CampusAdapter {
       final success = body['status'] == true || body['status'] == 'true';
       final msg = body['msg']?.toString() ?? body['message']?.toString();
 
-      return WithdrawResult(
-        success: success,
-        message: msg,
-      );
+      return WithdrawResult(success: success, message: msg);
     });
   }
 
@@ -327,9 +309,7 @@ class CampusAdapterImpl implements CampusAdapter {
     final response = await _client.dio.post<List<int>>(
       '/njs_3033/xsxk/getStudentXkList',
       data: '',
-      options: Options(
-        contentType: 'application/x-www-form-urlencoded',
-      ),
+      options: Options(contentType: 'application/x-www-form-urlencoded'),
     );
     _updateClockOffset(response);
     final body = _decodeAndParseJson(response);
@@ -354,10 +334,7 @@ class CampusAdapterImpl implements CampusAdapter {
       );
     }
 
-    return StudentProfile(
-      studentNo: studentNo,
-      studentName: studentName,
-    );
+    return StudentProfile(studentNo: studentNo, studentName: studentName);
   }
 
   /// Decode a raw byte response to a string, handling GBK.
@@ -397,8 +374,7 @@ class CampusAdapterImpl implements CampusAdapter {
     if (dateHeader != null) {
       final serverDate = HttpDate.parse(dateHeader);
       final localDate = DateTime.now().toUtc();
-      _campusClockOffsetMs =
-          serverDate.difference(localDate).inMilliseconds;
+      _campusClockOffsetMs = serverDate.difference(localDate).inMilliseconds;
       _client.lastResponseDate = serverDate;
     }
   }
@@ -423,9 +399,18 @@ class HttpDate {
   static DateTime _parseRfc1123(String s) {
     // "Mon, 21 Jul 2026 05:00:00 GMT"
     final months = {
-      'Jan': 1, 'Feb': 2, 'Mar': 3, 'Apr': 4,
-      'May': 5, 'Jun': 6, 'Jul': 7, 'Aug': 8,
-      'Sep': 9, 'Oct': 10, 'Nov': 11, 'Dec': 12,
+      'Jan': 1,
+      'Feb': 2,
+      'Mar': 3,
+      'Apr': 4,
+      'May': 5,
+      'Jun': 6,
+      'Jul': 7,
+      'Aug': 8,
+      'Sep': 9,
+      'Oct': 10,
+      'Nov': 11,
+      'Dec': 12,
     };
     final parts = s.replaceAll(',', '').split(RegExp(r'\s+'));
     // parts: [Mon, 21, Jul, 2026, 05:00:00, GMT]

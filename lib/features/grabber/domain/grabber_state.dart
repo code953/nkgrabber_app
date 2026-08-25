@@ -60,8 +60,7 @@ class GrabberState {
   final int failedCount;
 
   bool get isRunning =>
-      status == GrabberStatus.running ||
-      status == GrabberStatus.preparing;
+      status == GrabberStatus.running || status == GrabberStatus.preparing;
 
   bool get isTerminal =>
       status == GrabberStatus.success ||

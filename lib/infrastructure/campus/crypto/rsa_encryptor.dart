@@ -29,10 +29,10 @@ class RsaEncryptor {
   ///   var pubKey = "MIGfMA0GCS...";
   ///   var kid = "1234567890";
   static RsaLoginParams? extractFromHtml(String html) {
-    final pubKeyMatch =
-        RegExp(r'''pubKey\s*=\s*["']([^"']+)["']''').firstMatch(html);
-    final kidMatch =
-        RegExp(r'''kid\s*=\s*["']([^"']+)["']''').firstMatch(html);
+    final pubKeyMatch = RegExp(
+      r'''pubKey\s*=\s*["']([^"']+)["']''',
+    ).firstMatch(html);
+    final kidMatch = RegExp(r'''kid\s*=\s*["']([^"']+)["']''').firstMatch(html);
 
     if (pubKeyMatch == null || kidMatch == null) return null;
 

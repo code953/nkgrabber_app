@@ -17,18 +17,8 @@ import 'package:nkgrabber/infrastructure/database/tables/grab_tasks.dart';
 part 'app_database.g.dart';
 
 @DriftDatabase(
-  tables: [
-    Accounts,
-    CourseTargets,
-    GrabTasks,
-    AppSettings,
-  ],
-  daos: [
-    AccountDao,
-    CourseTargetDao,
-    GrabTaskDao,
-    SettingsDao,
-  ],
+  tables: [Accounts, CourseTargets, GrabTasks, AppSettings],
+  daos: [AccountDao, CourseTargetDao, GrabTaskDao, SettingsDao],
 )
 class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);

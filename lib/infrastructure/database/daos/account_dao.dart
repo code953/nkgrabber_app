@@ -10,22 +10,21 @@ import 'package:nkgrabber/infrastructure/database/tables/accounts.dart';
 part 'account_dao.g.dart';
 
 @DriftAccessor(tables: [Accounts])
-class AccountDao extends DatabaseAccessor<AppDatabase>
-    with _$AccountDaoMixin {
+class AccountDao extends DatabaseAccessor<AppDatabase> with _$AccountDaoMixin {
   AccountDao(super.db);
 
   /// Watch all accounts ordered by creation date (newest first).
   Stream<List<AccountEntry>> watchAll() {
-    return (select(accounts)
-          ..orderBy([(t) => OrderingTerm.desc(t.createdAt)]))
-        .watch();
+    return (select(
+      accounts,
+    )..orderBy([(t) => OrderingTerm.desc(t.createdAt)])).watch();
   }
 
   /// Get all accounts.
   Future<List<AccountEntry>> getAll() {
-    return (select(accounts)
-          ..orderBy([(t) => OrderingTerm.desc(t.createdAt)]))
-        .get();
+    return (select(
+      accounts,
+    )..orderBy([(t) => OrderingTerm.desc(t.createdAt)])).get();
   }
 
   /// Get all enabled accounts.
@@ -35,15 +34,12 @@ class AccountDao extends DatabaseAccessor<AppDatabase>
 
   /// Get accounts with a specific status.
   Future<List<AccountEntry>> getByStatus(AccountStatus status) {
-    return (select(accounts)
-          ..where((t) => t.status.equalsValue(status)))
-        .get();
+    return (select(accounts)..where((t) => t.status.equalsValue(status))).get();
   }
 
   /// Get a single account by ID.
   Future<AccountEntry?> getById(String id) {
-    return (select(accounts)..where((t) => t.id.equals(id)))
-        .getSingleOrNull();
+    return (select(accounts)..where((t) => t.id.equals(id))).getSingleOrNull();
   }
 
   /// Insert a new account.

@@ -47,10 +47,7 @@ class _EmptyState extends StatelessWidget {
             color: Theme.of(context).colorScheme.outline,
           ),
           const SizedBox(height: 16),
-          Text(
-            '还没有账号',
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
+          Text('还没有账号', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
           const Text('点击右下角按钮添加校园账号'),
         ],
@@ -77,9 +74,7 @@ class AccountListTile extends StatelessWidget {
     return ListTile(
       leading: CircleAvatar(
         child: Text(
-          account.displayName.isNotEmpty
-              ? account.displayName[0]
-              : '?',
+          account.displayName.isNotEmpty ? account.displayName[0] : '?',
         ),
       ),
       title: Text(account.displayName),
@@ -122,10 +117,7 @@ class _StatusBadge extends StatelessWidget {
         color: color.withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(12),
       ),
-      child: Text(
-        label,
-        style: TextStyle(color: color, fontSize: 12),
-      ),
+      child: Text(label, style: TextStyle(color: color, fontSize: 12)),
     );
   }
 }
@@ -167,10 +159,7 @@ class _AddAccountSheetState extends State<AddAccountSheet> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(
-            '添加账号',
-            style: Theme.of(context).textTheme.titleLarge,
-          ),
+          Text('添加账号', style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 16),
           SegmentedButton<bool>(
             segments: const [
