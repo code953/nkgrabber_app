@@ -25,21 +25,47 @@ class RsaEncryptor {
 
   /// Extract RSA public key and kid from login page HTML.
   ///
-  /// Looks for patterns like:
-  ///   var pubKey = "MIGfMA0GCS...";
-  ///   var kid = "1234567890";
+  /// The live login page carries both values in hidden form inputs, which is
+  /// what the school's own script reads (`$("#pubKey")[0].value`):
+  ///
+  ///     <input type="hidden" id="kid"    name="kid"    value="402893...">
+  ///     <input type="hidden" id="pubKey" name="pubKey" value="MIGfMA0GCS...">
+  ///
+  /// A `var pubKey = "..."` assignment is also accepted as a fallback, since
+  /// other deployments of the same platform render the values inline.
   static RsaLoginParams? extractFromHtml(String html) {
-    final pubKeyMatch = RegExp(
-      r'''pubKey\s*=\s*["']([^"']+)["']''',
+    final pubKey = _extractField(html, 'pubKey');
+    final kid = _extractField(html, 'kid');
+
+    if (pubKey == null || kid == null) return null;
+
+    return RsaLoginParams(pubKey: pubKey, kid: kid);
+  }
+
+  /// Find [name] as a hidden input's value, falling back to a JS assignment.
+  ///
+  /// Anchored on `id="<name>"` rather than a bare `<name>` so that `kid` cannot
+  /// be matched inside an unrelated attribute such as `data-kid-hint`.
+  static String? _extractField(String html, String name) {
+    // <input ... id="pubKey" ... value="...">  — attribute order varies, so
+    // value= is allowed to appear on either side of id=.
+    final inputAfter = RegExp(
+      '''id=["']$name["'][^>]*?value=["']([^"']+)["']''',
+      caseSensitive: false,
     ).firstMatch(html);
-    final kidMatch = RegExp(r'''kid\s*=\s*["']([^"']+)["']''').firstMatch(html);
+    if (inputAfter != null) return inputAfter.group(1);
 
-    if (pubKeyMatch == null || kidMatch == null) return null;
+    final inputBefore = RegExp(
+      '''value=["']([^"']+)["'][^>]*?id=["']$name["']''',
+      caseSensitive: false,
+    ).firstMatch(html);
+    if (inputBefore != null) return inputBefore.group(1);
 
-    return RsaLoginParams(
-      pubKey: pubKeyMatch.group(1)!,
-      kid: kidMatch.group(1)!,
-    );
+    // var pubKey = "..." / pubKey: '...'
+    final assignment = RegExp(
+      '''\\b$name\\s*[=:]\\s*["']([^"']+)["']''',
+    ).firstMatch(html);
+    return assignment?.group(1);
   }
 
   /// Encrypt plaintext password using RSA PKCS1v1.5.
