@@ -713,4 +713,31 @@ void main() {
       expect(find.textContaining('实际按 1500 ms 执行'), findsOneWidget);
     });
   });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Offline operation
+  // ═══════════════════════════════════════════════════════════════════════
+  group('Offline', () {
+    testWidgets('every page renders with no network access', (tester) async {
+      // The acceptance criterion for removing the online business: nothing
+      // outside the campus system may gate the UI. Widget tests have no
+      // network at all, so reaching all four pages and reading persisted
+      // settings proves there is no remote precondition left.
+      final db = AppDatabase(NativeDatabase.memory());
+      await _seedAccount(db);
+      await _seedTarget(db);
+      await _pumpApp(tester, database: db);
+
+      for (final (tab, marker) in [
+        ('账号', '账号管理'),
+        ('课程', '课程设置'),
+        ('抢课', '准备就绪'),
+        ('设置', '导出诊断包'),
+      ]) {
+        await tester.tap(find.text(tab).first);
+        await tester.pumpAndSettle();
+        expect(find.text(marker), findsWidgets, reason: '$tab 页未能离线渲染');
+      }
+    });
+  });
 }

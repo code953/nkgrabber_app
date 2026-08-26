@@ -45,25 +45,47 @@ lib/
   features/
     accounts/       # AccountsNotifier, AccountsPage, AddAccountSheet
     courses/        # CourseTargetsNotifier, CourseConfigPage
-    grabber/        # GrabberEngine, AccountWorker, RetryClassifier, GrabberPage
+    grabber/        # GrabberEngine, AccountWorker, RetryClassifier,
+                    #   GrabberController, GrabberPage
     settings/       # SettingsPage
   infrastructure/
     campus/         # CampusAdapter + impl, RSA, GBK, models, clock sync
     database/       # AppDatabase (Drift), 4 tables, 4 DAOs, connection
+    providers.dart  # DB/storage/DAO providers + AppSettingsNotifier
   l10n/             # app_zh.arb (primary), app_en.arb (placeholder)
 ```
 
-`main.dart` installs `FlutterError.onError` + `runZonedGuarded`; both write sanitized messages to the local log and send nothing over the network.
+`main.dart` installs `FlutterError.onError` + `runZonedGuarded`; both write sanitized messages to the local log and send nothing over the network. It also calls `markInterrupted()` once after the first frame, so tasks left `running` by a crash are not mistaken for live ones.
+
+## Riverpod Wiring
+
+Every page reads its data through providers; there are no stubs left.
+
+| Provider | Kind | Notes |
+|---|---|---|
+| `appDatabaseProvider`, `secureStorageProvider` | `Provider` | Overridden in widget tests with an in-memory DB + fake storage |
+| `accountDaoProvider` … `settingsDaoProvider` | `Provider` | Thin accessors; inherit the database's lifecycle |
+| `appSettingsProvider` | `AsyncNotifier` | **Not** a `StreamProvider` — see below |
+| `accountsProvider` | `StateNotifier` | Loads on construction; owns the `CampusClient` map |
+| `selectedAccountIdProvider` | `StateProvider` | Which account the course page is configuring |
+| `courseTargetsProvider` | `StateNotifier.family(accountId)` | Family-keyed so switching accounts cannot leak targets |
+| `batchesProvider`, `coursesProvider` | `FutureProvider.family` | The only network reads outside the engine |
+| `grabbableAccountsProvider` | `FutureProvider` | Enabled accounts that have ≥1 enabled target |
+| `grabberProvider` | `StateNotifier` | `GrabberController` mirrors the engine's broadcast stream |
+
+- **`appSettingsProvider` must not be a `StreamProvider` over `SettingsDao.watch()`.** Drift schedules a zero-duration cleanup timer when a query stream is cancelled. That timer is created during `finalizeTree`, after the framework's end-of-test pump has drained its queue, so it is still pending when `_verifyInvariants` runs and *every* widget test fails with "A Timer is still pending even after the widget tree was disposed". Teardowns run after that check, so they cannot fix it. Reading once and re-reading after each write keeps reactivity, since the row only changes through `AppSettingsNotifier`.
+- **Adapters are memory-only.** After a restart an account has a stored cookie but no `CampusClient`. Use `AccountsNotifier.ensureAdapter()` (async) rather than `getAdapter()` — it rebuilds from secure storage, and marks the account `expired` and returns null if the cookie is rejected. `GrabberEngine.AdapterResolver` is async for exactly this reason.
+- **The engine reads its limits at construction.** `grabberProvider` watches `appSettingsProvider`, so changing a limit rebuilds the engine — which would orphan running workers. The settings page therefore disables those controls while `grabberProvider` reports `isRunning`.
 
 ## Key Technical Constraints
 
 - **One HTTP target only**: the campus system (`http://campus.nks.edu.cn`, GBK, form POST). There is no business backend — do not add one.
-- **Per-account isolation**: each campus account gets its own `Dio` + in-memory `CookieJar`. Cookies never touch disk.
+- **Per-account isolation**: each campus account gets its own `Dio` + in-memory `CookieJar`. Cookies never touch disk. `AccountsNotifier` owns these clients and disposes them on account removal, failed login, and its own disposal.
 - **Secure storage only**: passwords and cookies live in platform secure storage (Android Keystore / iOS Keychain / Windows DPAPI / Linux Secret Service). Drift only stores reference keys.
-- **Log sanitization**: all log output passes through `LogSanitizer` before emission. Passwords, cookies, Bearer tokens, activation codes, `deviceToken`, `licenseCode` are replaced with `[REDACTED]`. The last three patterns are kept even though the online business is gone — removing a redaction rule is never an improvement.
+- **Log sanitization**: all log output passes through `LogSanitizer` before emission. Passwords, cookies, Bearer tokens, activation codes, `deviceToken`, `licenseCode` are replaced with `[REDACTED]`. The last three patterns are kept even though the online business is gone — removing a redaction rule is never an improvement. Student names, student numbers, and course names are never logged either: log the opaque UUID instead.
 - **Grabber state machine**: `idle → preparing → running → success/paused/stopped/interrupted/captchaRequired/failed`. No auto-recovery after `interrupted`. 30-minute hard timeout.
 - **effectiveIntervalMs = max(userIntervalMs, settings.minRequestIntervalMs)** — jitter is upward only, never below the floor. Both values come from `app_settings`.
-- **xkms validation**: unknown values (`!= "1"|"2"|"3"`) → mark target `failed`, never submit with a default.
+- **xkms validation**: unknown values (`!= "1"|"2"|"3"`) → mark target `failed`, never submit with a default. The batch picker also refuses to select such a batch at all.
 - **Localization delegates are mandatory**: `MaterialApp.router` forces `locale: Locale('zh')`, and the implicit `DefaultMaterialLocalizations` supports `en` only. `localizationsDelegates: S.localizationsDelegates` (which bundles the three `Global*` delegates) must stay wired, or every Material widget that calls `MaterialLocalizations.of()` — `NavigationRail`, `NavigationBar`, `Scaffold` drawers — throws at build time. Keep `supportedLocales: S.supportedLocales` so it tracks the `.arb` files.
 
 ## Database Schema (Drift, schemaVersion=3)
@@ -110,12 +132,28 @@ Tests live in `test/widget_test.dart`. The suite covers:
 - `RetryClassifier` (decision cases)
 - `ClockSyncStatus` (`campusNow` offset in both directions)
 - Interval calculation (`max(userIntervalMs, minRequestIntervalMs)`)
-- `NKGrabberApp` boot (widget test): the app reaches the accounts page and
-  `MaterialLocalizations` / `S` resolve under the forced `zh` locale
 
-Run with `flutter test`. All 44 tests must pass before committing. The two
-`NKGrabberApp` cases are the only widget tests; every page is still a stub, so
-there is no coverage of user interaction.
+Widget tests (14 cases) pump the real `NKGrabberApp` with `appDatabaseProvider`
+overridden to `NativeDatabase.memory()` and `secureStorageProvider` to a fake —
+the production providers open a file under the application support directory,
+which does not resolve in a test, so the page would spin forever and
+`pumpAndSettle` would time out. Use the `_pumpApp` / `_seedAccount` /
+`_seedTarget` helpers rather than repeating the override block.
+
+- `NKGrabberApp`: reaches the accounts page, `MaterialLocalizations` / `S`
+  resolve under the forced `zh` locale, empty state, list rendering
+- `CourseConfigPage`: no-account prompt, empty target state, priority ordering
+- `GrabberPage`: the start button stays disabled with no account, with an
+  account but no targets, and with only disabled targets; enabled otherwise
+- `SettingsPage`: renders the stored row, persists a slider release, warns
+  when the user interval is below the floor
+
+Run with `flutter test`. All 56 tests must pass before committing.
+
+New widget tests must be checked negatively — break the wiring under test and
+confirm the case goes red. A green test proves nothing on its own; several of
+these were written after a page was already wired, and only the negative check
+distinguishes "asserts the behaviour" from "asserts a coincidence".
 
 ## CI/CD
 
@@ -132,5 +170,9 @@ Never commit or log:
 - Passwords, cookies, `gdpk`, `JSESSIONID`
 - Student numbers, real names
 - Course IDs or names
+
+Log the opaque account/target UUID instead — it is meaningless outside the local
+database. Displaying these in the UI is fine (the user owns the data); writing
+them to the log file is not.
 
 `.env.example` documents no required variables — the client needs no build-time secrets.
