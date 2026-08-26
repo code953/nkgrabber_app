@@ -18,7 +18,18 @@ import 'package:nkgrabber/infrastructure/campus/campus_client_factory.dart';
 import 'package:nkgrabber/infrastructure/database/app_database.dart';
 import 'package:nkgrabber/infrastructure/database/daos/account_dao.dart';
 import 'package:nkgrabber/infrastructure/database/tables/accounts.dart';
+import 'package:nkgrabber/infrastructure/providers.dart';
 import 'package:uuid/uuid.dart';
+
+/// Provides the [AccountsNotifier] and kicks off the initial load.
+final accountsProvider = StateNotifierProvider<AccountsNotifier, AccountsState>(
+  (ref) {
+    return AccountsNotifier(
+      accountDao: ref.watch(accountDaoProvider),
+      secureStorage: ref.watch(secureStorageProvider),
+    )..loadAccounts();
+  },
+);
 
 /// State for the accounts list.
 class AccountsState {
@@ -62,6 +73,11 @@ class AccountsNotifier extends StateNotifier<AccountsState> {
   /// Active campus adapters keyed by account ID.
   final Map<String, CampusAdapter> _adapters = {};
 
+  /// The client backing each adapter, kept so its Dio can be closed.
+  /// `CampusAdapter` does not expose the client, and leaking it would leave
+  /// an open connection pool per removed account.
+  final Map<String, CampusClient> _clients = {};
+
   /// Load all accounts from the database.
   Future<void> loadAccounts() async {
     state = state.copyWith(isLoading: true);
@@ -76,8 +92,8 @@ class AccountsNotifier extends StateNotifier<AccountsState> {
     required bool rememberPassword,
   }) async {
     state = state.copyWith(isLoading: true, clearError: true);
+    final client = CampusClient(accountId: studentNo);
     try {
-      final client = CampusClient(accountId: studentNo);
       final adapter = CampusAdapterImpl(client: client);
 
       final result = await adapter.loginWithPassword(studentNo, password);
@@ -111,10 +127,14 @@ class AccountsNotifier extends StateNotifier<AccountsState> {
       );
 
       _adapters[id] = adapter;
+      _clients[id] = client;
       await loadAccounts();
-      _logger.info('Account added: ${result.studentName}');
+      // Log the opaque account id, never the student's name or number.
+      _logger.info('Account added: $id');
       return true;
     } on Exception catch (e) {
+      // The account was never stored, so nothing holds this client now.
+      client.dispose();
       state = state.copyWith(isLoading: false, error: e.toString());
       _logger.warn('Failed to add account by password', e);
       return false;
@@ -124,8 +144,8 @@ class AccountsNotifier extends StateNotifier<AccountsState> {
   /// Add a new account via cookie (ephemeral mode).
   Future<bool> addByCookie({required String gdpk}) async {
     state = state.copyWith(isLoading: true, clearError: true);
+    final client = CampusClient(accountId: 'cookie-tmp');
     try {
-      final client = CampusClient(accountId: 'cookie-tmp');
       final adapter = CampusAdapterImpl(client: client);
 
       final profile = await adapter.validateCookie(gdpk);
@@ -151,10 +171,12 @@ class AccountsNotifier extends StateNotifier<AccountsState> {
       );
 
       _adapters[id] = adapter;
+      _clients[id] = client;
       await loadAccounts();
-      _logger.info('Cookie account added: ${profile.studentName}');
+      _logger.info('Cookie account added: $id');
       return true;
     } on Exception catch (e) {
+      client.dispose();
       state = state.copyWith(isLoading: false, error: e.toString());
       _logger.warn('Failed to add account by cookie', e);
       return false;
@@ -174,11 +196,12 @@ class AccountsNotifier extends StateNotifier<AccountsState> {
 
     // Clean up adapter.
     _adapters.remove(id);
+    _clients.remove(id)?.dispose();
 
     // Delete from DB (cascades to CourseTargets and GrabTasks).
     await _accountDao.deleteById(id);
     await loadAccounts();
-    _logger.info('Account removed: ${account.displayName}');
+    _logger.info('Account removed: $id');
   }
 
   /// Enforce the configured account limit.
@@ -244,5 +267,15 @@ class AccountsNotifier extends StateNotifier<AccountsState> {
         await removeAccount(account.id);
       }
     }
+  }
+
+  @override
+  void dispose() {
+    for (final client in _clients.values) {
+      client.dispose();
+    }
+    _clients.clear();
+    _adapters.clear();
+    super.dispose();
   }
 }

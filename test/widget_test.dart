@@ -1,20 +1,67 @@
 import 'dart:math';
 
+import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nkgrabber/core/errors/app_exception.dart';
 import 'package:nkgrabber/core/logging/log_sanitizer.dart';
+import 'package:nkgrabber/core/security/secure_storage.dart';
 import 'package:nkgrabber/core/utils/constants.dart';
 import 'package:nkgrabber/core/utils/extensions.dart';
 import 'package:nkgrabber/features/grabber/application/retry_classifier.dart';
 import 'package:nkgrabber/features/grabber/domain/grabber_state.dart';
 import 'package:nkgrabber/infrastructure/campus/clock_sync.dart';
 import 'package:nkgrabber/infrastructure/campus/xkms_enum.dart';
+import 'package:nkgrabber/infrastructure/database/app_database.dart';
 import 'package:nkgrabber/infrastructure/database/tables/accounts.dart';
 import 'package:nkgrabber/infrastructure/database/tables/grab_tasks.dart';
+import 'package:nkgrabber/infrastructure/providers.dart';
 import 'package:nkgrabber/l10n/app_localizations.dart';
 import 'package:nkgrabber/main.dart' show NKGrabberApp;
+
+/// In-memory secure storage so widget tests never touch the platform keychain.
+class _FakeSecureStorage implements SecureStorage {
+  final _store = <String, String>{};
+
+  @override
+  Future<void> write({required String key, required String value}) async =>
+      _store[key] = value;
+
+  @override
+  Future<String?> read({required String key}) async => _store[key];
+
+  @override
+  Future<void> delete({required String key}) async => _store.remove(key);
+
+  @override
+  Future<void> deleteAll() async => _store.clear();
+
+  @override
+  Future<bool> isAvailable() async => true;
+}
+
+/// Pump the real app against an in-memory database.
+///
+/// The production `appDatabaseProvider` opens a file under the application
+/// support directory, which does not resolve in a widget test — the accounts
+/// page would spin forever and `pumpAndSettle` would time out.
+Future<AppDatabase> _pumpApp(WidgetTester tester) async {
+  final db = AppDatabase(NativeDatabase.memory());
+  addTearDown(db.close);
+
+  await tester.pumpWidget(
+    ProviderScope(
+      overrides: [
+        appDatabaseProvider.overrideWithValue(db),
+        secureStorageProvider.overrideWithValue(_FakeSecureStorage()),
+      ],
+      child: const NKGrabberApp(),
+    ),
+  );
+  await tester.pumpAndSettle();
+  return db;
+}
 
 void main() {
   // ═══════════════════════════════════════════════════════════════════════
@@ -409,17 +456,57 @@ void main() {
   // ═══════════════════════════════════════════════════════════════════════
   group('NKGrabberApp', () {
     testWidgets('boots straight into the accounts page', (tester) async {
-      await tester.pumpWidget(const ProviderScope(child: NKGrabberApp()));
-      await tester.pumpAndSettle();
+      await _pumpApp(tester);
 
       expect(find.text('账号管理'), findsOneWidget);
+    });
+
+    testWidgets('shows the empty state when no accounts are stored', (
+      tester,
+    ) async {
+      await _pumpApp(tester);
+
+      expect(find.text('还没有账号'), findsOneWidget);
+    });
+
+    testWidgets('lists accounts loaded from the database', (tester) async {
+      final db = AppDatabase(NativeDatabase.memory());
+      addTearDown(db.close);
+
+      const now = '2026-01-01T00:00:00.000Z';
+      await db.accountDao.insertAccount(
+        AccountsCompanion.insert(
+          id: 'a1',
+          displayName: '测试账号',
+          studentNo: '20260001',
+          loginType: LoginType.password,
+          cookieJarRef: 'cookie-a1',
+          status: AccountStatus.ready,
+          createdAt: now,
+          updatedAt: now,
+        ),
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appDatabaseProvider.overrideWithValue(db),
+            secureStorageProvider.overrideWithValue(_FakeSecureStorage()),
+          ],
+          child: const NKGrabberApp(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('还没有账号'), findsNothing);
+      expect(find.text('测试账号'), findsOneWidget);
+      expect(find.text('就绪'), findsOneWidget);
     });
 
     testWidgets('provides MaterialLocalizations under the zh locale', (
       tester,
     ) async {
-      await tester.pumpWidget(const ProviderScope(child: NKGrabberApp()));
-      await tester.pumpAndSettle();
+      await _pumpApp(tester);
 
       // The 800x600 default surface takes the desktop branch, so this is the
       // NavigationRail that threw "No MaterialLocalizations found" while

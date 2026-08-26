@@ -5,18 +5,36 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:nkgrabber/features/accounts/application/accounts_notifier.dart';
 import 'package:nkgrabber/infrastructure/database/app_database.dart';
 import 'package:nkgrabber/infrastructure/database/tables/accounts.dart';
 
-class AccountsPage extends StatelessWidget {
+class AccountsPage extends ConsumerWidget {
   const AccountsPage({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    // TODO: Wire to AccountsNotifier via Riverpod.
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(accountsProvider);
+
     return Scaffold(
       appBar: AppBar(title: const Text('账号管理')),
-      body: const _EmptyState(),
+      body: switch (state) {
+        AccountsState(isLoading: true, accounts: []) => const Center(
+          child: CircularProgressIndicator(),
+        ),
+        AccountsState(accounts: []) => const _EmptyState(),
+        _ => ListView.builder(
+          itemCount: state.accounts.length,
+          itemBuilder: (context, i) {
+            final account = state.accounts[i];
+            return AccountListTile(
+              account: account,
+              onDelete: () => _confirmDelete(context, ref, account),
+            );
+          },
+        ),
+      },
       floatingActionButton: FloatingActionButton(
         onPressed: () => _showAddAccountDialog(context),
         child: const Icon(Icons.add),
@@ -27,8 +45,39 @@ class AccountsPage extends StatelessWidget {
   void _showAddAccountDialog(BuildContext context) {
     showModalBottomSheet<void>(
       context: context,
+      isScrollControlled: true,
       builder: (context) => const AddAccountSheet(),
     );
+  }
+
+  Future<void> _confirmDelete(
+    BuildContext context,
+    WidgetRef ref,
+    AccountEntry account,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('删除账号'),
+        // The display name embeds the student number, so it is shown here but
+        // never logged.
+        content: Text('确定要删除「${account.displayName}」吗？该账号的课程目标与抢课记录会一并删除。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed ?? false) {
+      await ref.read(accountsProvider.notifier).removeAccount(account.id);
+    }
   }
 }
 
@@ -123,20 +172,21 @@ class _StatusBadge extends StatelessWidget {
 }
 
 /// Bottom sheet for adding a new account.
-class AddAccountSheet extends StatefulWidget {
+class AddAccountSheet extends ConsumerStatefulWidget {
   const AddAccountSheet({super.key});
 
   @override
-  State<AddAccountSheet> createState() => _AddAccountSheetState();
+  ConsumerState<AddAccountSheet> createState() => _AddAccountSheetState();
 }
 
-class _AddAccountSheetState extends State<AddAccountSheet> {
+class _AddAccountSheetState extends ConsumerState<AddAccountSheet> {
   bool _isPasswordMode = true;
   final _studentNoController = TextEditingController();
   final _passwordController = TextEditingController();
   final _cookieController = TextEditingController();
   bool _rememberPassword = true;
   bool _loading = false;
+  String? _error;
 
   @override
   void dispose() {
@@ -208,6 +258,13 @@ class _AddAccountSheetState extends State<AddAccountSheet> {
             ),
           ],
           const SizedBox(height: 16),
+          if (_error != null) ...[
+            Text(
+              _error!,
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+            const SizedBox(height: 12),
+          ],
           FilledButton(
             onPressed: _loading ? null : _submit,
             child: _loading
@@ -224,11 +281,48 @@ class _AddAccountSheetState extends State<AddAccountSheet> {
   }
 
   Future<void> _submit() async {
-    setState(() => _loading = true);
+    final studentNo = _studentNoController.text.trim();
+    final password = _passwordController.text;
+    final gdpk = _cookieController.text.trim();
 
-    // TODO: Call AccountsNotifier.addByPassword/addByCookie via Riverpod.
+    // Validate before touching the network so an empty form fails instantly.
+    final String? complaint;
+    if (_isPasswordMode) {
+      complaint = studentNo.isEmpty
+          ? '请输入学号'
+          : (password.isEmpty ? '请输入密码' : null);
+    } else {
+      complaint = gdpk.isEmpty ? '请输入 gdpk Cookie' : null;
+    }
+    if (complaint != null) {
+      setState(() => _error = complaint);
+      return;
+    }
 
-    setState(() => _loading = false);
-    if (mounted) Navigator.of(context).pop();
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
+    final notifier = ref.read(accountsProvider.notifier);
+    final ok = _isPasswordMode
+        ? await notifier.addByPassword(
+            studentNo: studentNo,
+            password: password,
+            rememberPassword: _rememberPassword,
+          )
+        : await notifier.addByCookie(gdpk: gdpk);
+
+    if (!mounted) return;
+
+    if (ok) {
+      Navigator.of(context).pop();
+    } else {
+      // Keep the sheet open so the entered credentials are not lost.
+      setState(() {
+        _loading = false;
+        _error = ref.read(accountsProvider).error ?? '添加失败，请重试';
+      });
+    }
   }
 }
