@@ -18,6 +18,11 @@ import 'package:nkgrabber/infrastructure/campus/encoding/gbk_codec.dart';
 import 'package:nkgrabber/infrastructure/campus/models/campus_models.dart';
 import 'package:nkgrabber/infrastructure/campus/portal_sso.dart';
 
+/// Hops the SSO handshake is allowed to take. The live chain uses two
+/// (`xsxk2` → `loginRedirect` → `xsxk2`); the rest is headroom before we call
+/// it a loop.
+const _maxSsoRedirects = 6;
+
 class CampusAdapterImpl implements CampusAdapter {
   CampusAdapterImpl({required CampusClient client}) : _client = client;
 
@@ -173,7 +178,7 @@ class CampusAdapterImpl implements CampusAdapter {
     // Throws with an actionable message when the school changes ssolx.
     final ssoUrl = buildSsoUrl(origin: origin, app: app, session: portal);
 
-    await _client.dio.getUri<List<int>>(Uri.parse(ssoUrl));
+    await _followSsoRedirects(ssoUrl);
 
     final cookies = await _client.cookieJar.loadForRequest(
       Uri.parse('$origin/njs_3033/'),
@@ -190,6 +195,40 @@ class CampusAdapterImpl implements CampusAdapter {
       );
     }
     return gdpk;
+  }
+
+  /// Walk the SSO redirect chain one hop at a time.
+  ///
+  /// Dio's own `followRedirects` is handled by the HTTP adapter, *below* the
+  /// interceptor chain, so the cookie manager never sees the intermediate
+  /// responses. The course-selection host sets `gdpk` on the very first hop
+  /// and then bounces through `/njs_3033/loginRedirect` back to itself — with
+  /// automatic following, that final hop arrives without the cookie and the
+  /// server answers 403. Following by hand puts every hop through the
+  /// interceptors, which is what makes the jar hold `gdpk` at the end.
+  Future<void> _followSsoRedirects(String startUrl) async {
+    var url = startUrl;
+
+    for (var hop = 0; hop < _maxSsoRedirects; hop++) {
+      final response = await _client.dio.getUri<List<int>>(
+        Uri.parse(url),
+        options: Options(
+          followRedirects: false,
+          // Redirect codes must reach us as responses, not exceptions.
+          validateStatus: (status) => status != null && status < 400,
+        ),
+      );
+
+      final location = response.headers.value('location');
+      if (location == null) return;
+
+      url = Uri.parse(url).resolve(location).toString();
+    }
+
+    throw const CampusException(
+      message: '选课系统登录跳转次数异常，请稍后重试',
+      type: CampusExceptionType.loginFailed,
+    );
   }
 
   @override

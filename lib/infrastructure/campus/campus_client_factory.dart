@@ -13,12 +13,14 @@ import 'package:nkgrabber/core/utils/constants.dart';
 
 /// An isolated HTTP client for a single campus account.
 class CampusClient {
-  CampusClient({String? accountId})
+  /// [baseUrl] defaults to the real campus host. It is injectable only so a
+  /// test can point the client at a loopback server; production never sets it.
+  CampusClient({String? accountId, String? baseUrl})
     : _cookieJar = CookieJar(),
       _accountId = accountId ?? 'unknown' {
     _dio = Dio(
       BaseOptions(
-        baseUrl: AppConstants.campusBaseUrl,
+        baseUrl: baseUrl ?? AppConstants.campusBaseUrl,
         connectTimeout: const Duration(seconds: 10),
         receiveTimeout: const Duration(seconds: 15),
         // Don't auto-decode; we handle GBK manually.
@@ -30,7 +32,16 @@ class CampusClient {
         },
       ),
     );
-    _dio.interceptors.add(CookieManager(_cookieJar));
+    // The portal emits a bare `Set-Cookie: HttpOnly=` alongside the real
+    // session cookie — it means to append the HttpOnly *attribute* to
+    // JSESSIONID and gets the header wrong. dart:io refuses to parse it, and
+    // CookieManager forces the whole map with .toList(), so that one throw
+    // discards the valid JSESSIONID on the same response and dio rejects the
+    // request as `DioException [unknown]: null`. Skipping the bad fragment is
+    // what browsers do; the school's header is not something we can fix.
+    _dio.interceptors.add(
+      CookieManager(_cookieJar, ignoreInvalidCookies: true),
+    );
     _dio.interceptors.add(_CampusLoggingInterceptor(_accountId));
   }
 

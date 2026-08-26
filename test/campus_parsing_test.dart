@@ -11,10 +11,17 @@
 /// the parsers depend on.
 library;
 
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
+import 'package:dio/dio.dart';
+import 'package:dio_cookie_manager/dio_cookie_manager.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nkgrabber/core/errors/app_exception.dart';
+import 'package:nkgrabber/core/utils/constants.dart';
+import 'package:nkgrabber/infrastructure/campus/campus_adapter_impl.dart';
+import 'package:nkgrabber/infrastructure/campus/campus_client_factory.dart';
 import 'package:nkgrabber/infrastructure/campus/campus_envelope.dart';
 import 'package:nkgrabber/infrastructure/campus/crypto/rsa_encryptor.dart';
 import 'package:nkgrabber/infrastructure/campus/portal_sso.dart';
@@ -415,6 +422,194 @@ void main() {
     });
   });
 
+  group('malformed Set-Cookie tolerance', () {
+    // The login response carries two Set-Cookie headers, verbatim:
+    //
+    //   Set-Cookie: HttpOnly=
+    //   Set-Cookie: JSESSIONID=<32 hex>; path=/zhxy
+    //
+    // The first is the school's bug — it meant to append the HttpOnly
+    // attribute to the session cookie and emitted a bare header line instead.
+    // `Cookie.fromSetCookieValue('HttpOnly=')` throws, because dart:io
+    // requires at least one character after the `=`.
+    const malformed = 'HttpOnly=';
+    const valid = 'JSESSIONID=8de847b8e8ca435e8b1d0f2a7c934e11; path=/zhxy';
+
+    test('dart:io rejects the bare HttpOnly= header the school sends', () {
+      // Pinning the upstream behaviour: if a future SDK starts accepting it,
+      // the workaround below becomes removable and this test says so.
+      expect(
+        () => Cookie.fromSetCookieValue(malformed),
+        throwsA(isA<HttpException>()),
+      );
+      expect(Cookie.fromSetCookieValue(valid).name, 'JSESSIONID');
+    });
+
+    test('the campus client is built to skip it, not drop the whole jar', () {
+      // CookieManager maps every Set-Cookie through fromSetCookieValue and
+      // forces the chain with .toList(). One throw aborts the entire save, so
+      // the *valid* JSESSIONID on the same response is lost too and dio
+      // rejects the request as `DioException [unknown]: null` — which is
+      // exactly the error adding an account produced.
+      final client = CampusClient(accountId: 'test');
+      addTearDown(client.dispose);
+
+      final manager = client.dio.interceptors.whereType<CookieManager>().single;
+
+      expect(
+        manager.ignoreInvalidCookies,
+        isTrue,
+        reason: 'every login response carries a bare `HttpOnly=` header',
+      );
+    });
+
+    test(
+      'the campus client keeps the good cookie from a mixed response',
+      () async {
+        final client = CampusClient(accountId: 'test');
+        addTearDown(client.dispose);
+        final manager = client.dio.interceptors
+            .whereType<CookieManager>()
+            .single;
+        final uri = Uri.parse('${AppConstants.campusBaseUrl}/zhxy/');
+
+        await manager.saveCookies(
+          Response<void>(
+            requestOptions: RequestOptions(
+              path: '/zhxy/',
+              baseUrl: AppConstants.campusBaseUrl,
+            ),
+            headers: Headers.fromMap({
+              HttpHeaders.setCookieHeader: [malformed, valid],
+            }),
+          ),
+        );
+
+        final saved = await client.cookieJar.loadForRequest(uri);
+        expect(
+          saved.map((c) => c.name),
+          contains('JSESSIONID'),
+          reason: 'losing the session cookie is what broke account adding',
+        );
+        expect(saved.map((c) => c.name), isNot(contains('HttpOnly')));
+      },
+    );
+  });
+
+  group('SSO redirect following', () {
+    // The live chain, captured hop by hop:
+    //
+    //   GET /njs_3033/xsxk2?…&token=…  → 302, Set-Cookie: gdpk=…; Path=/
+    //   GET /njs_3033/loginRedirect?…  → 302
+    //   GET /njs_3033/xsxk2?…          → 200
+    //
+    // Dio's own followRedirects runs in the HTTP adapter, *below* the
+    // interceptor chain, so CookieManager never sees hop 0 — the gdpk it sets
+    // is dropped, the final hop arrives cookie-less, and the server answers
+    // 403. The adapter therefore walks the chain itself, one hop per request,
+    // so every response passes through the interceptors.
+    //
+    // This drives the real adapter against a local server that reproduces the
+    // school's behaviour: the malformed Set-Cookie, the redirect chain, and
+    // the 403 for a request that arrives without gdpk.
+    late HttpServer server;
+    late String origin;
+    var sawCookielessFinalHop = false;
+
+    setUp(() async {
+      sawCookielessFinalHop = false;
+      server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      origin = 'http://${server.address.address}:${server.port}';
+
+      unawaited(
+        server.forEach((req) async {
+          final res = req.response;
+          final path = req.uri.path;
+          final cookies = req.headers.value(HttpHeaders.cookieHeader) ?? '';
+
+          // Every portal response carries the school's malformed header.
+          void portalCookies() {
+            res.headers.add(
+              HttpHeaders.setCookieHeader,
+              'HttpOnly=',
+              preserveHeaderCase: true,
+            );
+            res.headers.add(
+              HttpHeaders.setCookieHeader,
+              'JSESSIONID=$_fakeSessionId; path=/zhxy',
+            );
+          }
+
+          switch (path) {
+            case '/zhxy/welcome':
+              portalCookies();
+              res.headers.contentType = ContentType.html;
+              res.write(_fakeLoginPage);
+            case '/zhxy/rrtlogin/loginWithYzm.jsmeb':
+              portalCookies();
+              res.write('{"result":{"code":"0","msg":"success"},"status":200}');
+            case '/zhxy':
+              portalCookies();
+              res.headers.contentType = ContentType.html;
+              res.write(_fakePortalHome);
+            case '/zhxy/app/getAllAppsByUser.jsmeb':
+              portalCookies();
+              res.write(
+                '{"result":{"data":[{"id":"APPID","mc":"学生选课",'
+                '"appurl":"/njs_3033/xsxk2?a=a&ssoappid=APPID",'
+                '"ssolx":5,"apiurl":"/gdpk"}]},"status":200}',
+              );
+            case '/njs_3033/xsxk2' when !cookies.contains('gdpk'):
+              // Hop 0: mint gdpk, then bounce. If the client followed
+              // redirects itself, CookieManager would never see this header.
+              res.headers.add(
+                HttpHeaders.setCookieHeader,
+                'gdpk=$_fakeGdpk; Path=/; HttpOnly',
+              );
+              res.statusCode = HttpStatus.found;
+              res.headers.set('Location', '/njs_3033/loginRedirect');
+            case '/njs_3033/loginRedirect':
+              res.statusCode = HttpStatus.found;
+              res.headers.set('Location', '/njs_3033/xsxk2?a=a');
+            case '/njs_3033/xsxk2':
+              // Reached only when gdpk came back — which is the whole point.
+              res.write('<html>选课</html>');
+            default:
+              if (path.startsWith('/njs_3033/') && !cookies.contains('gdpk')) {
+                sawCookielessFinalHop = true;
+                res.statusCode = HttpStatus.forbidden;
+              }
+          }
+          await res.close();
+        }),
+      );
+    });
+
+    tearDown(() => server.close(force: true));
+
+    test('login walks the chain and ends up holding gdpk', () async {
+      final client = CampusClient(accountId: 'test', baseUrl: origin);
+      addTearDown(client.dispose);
+      final adapter = CampusAdapterImpl(client: client);
+
+      final result = await adapter.loginWithPassword('26411001', 'pw');
+
+      expect(
+        result.gdpk,
+        _fakeGdpk,
+        reason:
+            'gdpk is set on hop 0 and only survives if that response '
+            'passes through CookieManager',
+      );
+      expect(result.studentNo, '26411001');
+      expect(
+        sawCookielessFinalHop,
+        isFalse,
+        reason: 'a hop arriving without gdpk is what produced the live 403',
+      );
+    });
+  });
+
   group('submit payload', () {
     test('kmhDtoList is a JSON array of objects, not a joined string', () {
       // The school's page sends
@@ -435,3 +630,33 @@ void main() {
     });
   });
 }
+
+// ---------------------------------------------------------------------------
+// Fixtures for the loopback portal used by the SSO redirect group.
+//
+// The RSA key below is a throwaway 1024-bit key generated for this test. It
+// encrypts nothing real — the fake server accepts any ciphertext.
+// ---------------------------------------------------------------------------
+
+const _fakeSessionId = '8de847b8e8ca435e8b1d0f2a7c934e11';
+const _fakeGdpk = 's%3AFAKEgdpkVALUEforTESTINGonly0000';
+const _fakeKid = '402893629fb5ea8801a03c4f48e512f3';
+// ignore: lines_longer_than_80_chars — a base64 key has no legal break point
+const _fakePubKey =
+    'MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDD9jeNHqi1sf3cKV5dhv34kouzK+2MzdbpDBrwm1MASxUsMjyEDlgbbSEkNx6Ca85xvTCwbcO6501kUI4Xhws2Njt84eQ+ZjPATuHxBNwVoaJ8QlwlKBRPKEzo9xPpVa/wpuLEIGa60Xpz08x7aZG26kbYPPfnHwVQ+NHmkIcc0wIDAQAB';
+
+const _fakeLoginPage =
+    '''
+<form id="loginForm" method="post">
+  <input type="hidden" id="kid" name="kid" value="$_fakeKid">
+  <input type="hidden" id="pubKey" name="pubKey" value="$_fakePubKey">
+</form>
+''';
+
+const _fakePortalHome = '''
+<script>
+    var mycenter_token = "TOKEN0000000000000000000000000000000000000000000000";
+    var mycenter_userid = "26411001";
+</script>
+<sapn id="user_name">张三</sapn>
+''';
