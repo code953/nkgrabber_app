@@ -64,11 +64,15 @@ class AccountWorker {
       final xkid = entry.key;
       final batchTargets = entry.value;
 
-      // Validate xkms for all targets in this batch.
+      // Validate xkms for all targets in this batch. A closed batch and an
+      // unrecognised mode are both non-submittable, but they need different
+      // messages — "please upgrade the client" is misleading when the batch is
+      // simply over.
       final xkms = batchTargets.first.xkms;
-      if (XkmsMode.fromCode(xkms) == null) {
+      final blockedReason = Xkms.blockedReason(xkms);
+      if (blockedReason != null) {
         for (final t in batchTargets) {
-          onTargetResult(t.id, success: false, message: '无法识别的选课模式，请等待客户端升级');
+          onTargetResult(t.id, success: false, message: blockedReason);
         }
         continue;
       }

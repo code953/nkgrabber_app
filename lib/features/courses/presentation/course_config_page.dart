@@ -116,7 +116,7 @@ class _TargetList extends ConsumerWidget {
           key: ValueKey(t.id),
           courseName: t.courseName,
           batchName: t.batchName,
-          xkms: XkmsMode.fromCode(t.xkms)?.label ?? '未知模式',
+          xkms: Xkms.labelFor(t.xkms),
           enabled: t.enabled,
           onToggle: (v) => notifier.toggleEnabled(t.id, enabled: v),
           onDelete: () => notifier.removeTarget(t.id),
@@ -152,17 +152,17 @@ class _BatchPickerPage extends ConsumerWidget {
             itemCount: list.length,
             itemBuilder: (context, i) {
               final b = list[i];
-              final mode = XkmsMode.fromCode(b.xkms);
+              final blockedReason = Xkms.blockedReason(b.xkms);
               return ListTile(
                 title: Text(b.batchName),
                 subtitle: Text(
-                  '${mode?.label ?? '未知模式'} · ${b.kssj} ~ ${b.jssj}',
+                  '${Xkms.labelFor(b.xkms)} · ${b.kssj} ~ ${b.jssj}',
                 ),
                 trailing: const Icon(Icons.chevron_right),
-                // An unrecognised xkms cannot be submitted safely, so the
-                // batch is shown but not selectable.
-                enabled: mode != null,
-                onTap: mode == null
+                // A closed or unrecognised batch cannot be submitted, so it is
+                // shown (so the user can see it exists) but not selectable.
+                enabled: blockedReason == null,
+                onTap: blockedReason != null
                     ? null
                     : () => Navigator.of(context).push(
                         MaterialPageRoute<void>(

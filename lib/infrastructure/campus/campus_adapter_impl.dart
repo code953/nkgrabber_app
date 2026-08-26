@@ -12,9 +12,11 @@ import 'package:nkgrabber/core/errors/app_exception.dart';
 import 'package:nkgrabber/core/logging/app_logger.dart';
 import 'package:nkgrabber/infrastructure/campus/campus_adapter.dart';
 import 'package:nkgrabber/infrastructure/campus/campus_client_factory.dart';
+import 'package:nkgrabber/infrastructure/campus/campus_envelope.dart';
 import 'package:nkgrabber/infrastructure/campus/crypto/rsa_encryptor.dart';
 import 'package:nkgrabber/infrastructure/campus/encoding/gbk_codec.dart';
 import 'package:nkgrabber/infrastructure/campus/models/campus_models.dart';
+import 'package:nkgrabber/infrastructure/campus/portal_sso.dart';
 
 class CampusAdapterImpl implements CampusAdapter {
   CampusAdapterImpl({required CampusClient client}) : _client = client;
@@ -51,61 +53,143 @@ class CampusAdapterImpl implements CampusAdapter {
         rsaParams.pubKey,
       );
 
-      // Step 3: POST login request.
+      // Step 3: POST login. The body is JSON even though the content type is
+      // form-encoded — that is what the school's own script sends, and a
+      // genuinely form-encoded `params=[...]` is rejected with 参数格式非法.
       final loginResponse = await _client.dio.post<List<int>>(
         '/zhxy/rrtlogin/loginWithYzm.jsmeb',
-        data:
-            'params=${Uri.encodeComponent('[$account,$encryptedPassword,,${rsaParams.kid}]')}',
-        options: Options(contentType: 'application/x-www-form-urlencoded'),
+        data: jsonEncode({
+          'params': [account, encryptedPassword, '', rsaParams.kid],
+        }),
+        options: Options(
+          contentType: 'application/x-www-form-urlencoded; charset=UTF-8',
+        ),
       );
-      final loginBody = _decodeAndParseJson(loginResponse);
       _updateClockOffset(loginResponse);
+      _checkLoginResult(_decodeAndParseJson(loginResponse));
 
-      if (loginBody['status'] != true && loginBody['status'] != 'true') {
-        final msg =
-            loginBody['msg'] as String? ?? loginBody['message'] as String?;
-        if (msg != null && msg.contains('验证码')) {
-          throw const CampusException(
-            message: '需要验证码',
-            type: CampusExceptionType.captchaRequired,
-          );
-        }
-        throw CampusException(
-          message: msg ?? '登录失败',
-          type: CampusExceptionType.loginFailed,
-        );
-      }
-
-      // Step 4: Follow SSO redirect to obtain gdpk cookie.
-      await _client.dio.get<List<int>>('/njs_3033/xsxk2');
-
-      // Step 5: Extract gdpk from cookies.
-      final cookies = await _client.cookieJar.loadForRequest(
-        Uri.parse('${_client.dio.options.baseUrl}/njs_3033/'),
-      );
-      final gdpk = cookies
-          .where((c) => c.name == 'gdpk')
-          .map((c) => c.value)
-          .firstOrNull;
-
-      if (gdpk == null || gdpk.isEmpty) {
+      // Step 4: Read the portal home page for the SSO token and student id.
+      final homeResponse = await _client.dio.get<List<int>>('/zhxy');
+      final homeHtml = _decodeResponse(homeResponse);
+      final portal = parsePortalSession(homeHtml);
+      if (portal == null) {
         throw const CampusException(
-          message: '未获取到选课会话',
+          message: '登录成功但未能读取门户会话信息',
           type: CampusExceptionType.loginFailed,
         );
       }
 
-      // Step 6: Fetch student profile.
-      final profile = await _fetchProfile();
+      // Step 5: Exchange the portal session for the gdpk cookie.
+      final gdpk = await _acquireGdpk(portal);
 
-      _logger.info('Login successful: ${profile.studentName}');
+      // Step 6: Resolve the display name. The portal page is the only source
+      // that works for a student with no batches, so prefer it; fall back to
+      // the student number rather than failing a good login over a label.
+      final studentName = parsePortalUserName(homeHtml);
+
+      // Log the opaque account id only — never the student's name or number.
+      _logger.info('Login successful');
 
       return LoginResult(
         gdpk: gdpk,
-        studentNo: profile.studentNo,
-        studentName: profile.studentName,
+        studentNo: portal.userId,
+        studentName: studentName ?? portal.userId,
       );
     });
+  }
+
+  /// Validate the login response envelope.
+  ///
+  /// Success is `result.code == "0"`; there is no top-level boolean `status`.
+  /// The distinct codes matter because each needs a different user action.
+  void _checkLoginResult(Map<String, dynamic> body) {
+    final error = body['error'];
+    if (error is Map<String, dynamic>) {
+      throw CampusException(
+        message: error['message']?.toString() ?? '登录失败',
+        type: CampusExceptionType.loginFailed,
+      );
+    }
+
+    final result = body['result'];
+    if (result is! Map<String, dynamic>) {
+      throw const CampusException(
+        message: '登录响应格式不符合预期',
+        type: CampusExceptionType.unknownResponse,
+      );
+    }
+
+    final code = result['code']?.toString();
+    if (code == '0') return;
+
+    final msg = result['msg']?.toString();
+
+    // The portal shows a captcha field once three attempts have failed. This
+    // client cannot solve one, so say so instead of retrying into a lockout.
+    final failedCount = campusInt(result['faildnum']) ?? 0;
+    if (failedCount >= 3 || (msg != null && msg.contains('验证码'))) {
+      throw CampusException(
+        message: msg == null || !msg.contains('验证码')
+            ? '登录失败次数过多，学校已要求验证码，请在浏览器中登录一次后重试'
+            : msg,
+        type: CampusExceptionType.captchaRequired,
+      );
+    }
+
+    throw CampusException(
+      message: switch (code) {
+        '5' => '首次登录需要先在学校门户修改密码',
+        '6' => '密码强度不足，需要先在学校门户修改密码',
+        _ => msg ?? '登录失败',
+      },
+      type: CampusExceptionType.loginFailed,
+    );
+  }
+
+  /// Follow the portal SSO redirect until the course-selection host sets gdpk.
+  Future<String> _acquireGdpk(PortalSession portal) async {
+    final registry = await _client.dio.post<List<int>>(
+      '/zhxy/app/getAllAppsByUser.jsmeb',
+      data: jsonEncode({'params': <Object?>[]}),
+      options: Options(
+        contentType: 'application/x-www-form-urlencoded; charset=UTF-8',
+      ),
+    );
+    final rows = unwrapCampusRows(
+      _decodeAndParseJson(registry),
+      what: '读取选课入口',
+      listKey: 'data',
+    );
+
+    final app = findCourseSelectionApp(rows);
+    if (app == null) {
+      throw const CampusException(
+        message: '该账号没有开通选课应用',
+        type: CampusExceptionType.loginFailed,
+      );
+    }
+
+    final origin = _client.dio.options.baseUrl;
+    // Throws with an actionable message when the school changes ssolx.
+    final ssoUrl = buildSsoUrl(origin: origin, app: app, session: portal);
+
+    await _client.dio.getUri<List<int>>(Uri.parse(ssoUrl));
+
+    final cookies = await _client.cookieJar.loadForRequest(
+      Uri.parse('$origin/njs_3033/'),
+    );
+    final gdpk = cookies
+        .where((c) => c.name == 'gdpk')
+        .map((c) => c.value)
+        .firstOrNull;
+
+    if (gdpk == null || gdpk.isEmpty) {
+      throw const CampusException(
+        message: '未获取到选课会话',
+        type: CampusExceptionType.loginFailed,
+      );
+    }
+    return gdpk;
   }
 
   @override
@@ -125,24 +209,24 @@ class CampusAdapterImpl implements CampusAdapter {
   @override
   Future<List<SelectionBatch>> listBatches() async {
     return _queue.add(() async {
-      final response = await _client.dio.post<List<int>>(
-        '/njs_3033/xsxk/getStudentXkList',
-        data: '',
-        options: Options(contentType: 'application/x-www-form-urlencoded'),
+      final response = await _postForm('/njs_3033/xsxk/getStudentXkList', '');
+      final rows = unwrapCampusRows(
+        _decodeAndParseJson(response),
+        what: '读取选课批次',
       );
-      _updateClockOffset(response);
-      final body = _decodeAndParseJson(response);
 
-      final dataList = body['data'] as List<dynamic>? ?? [];
-      return dataList.map((item) {
-        final map = item as Map<String, dynamic>;
+      return rows.map((map) {
         return SelectionBatch(
-          xkid: map['xkid']?.toString() ?? '',
-          xkms: map['xkms']?.toString() ?? '',
-          batchName: map['xkmc']?.toString() ?? map['pcmc']?.toString() ?? '',
-          zdxk: (map['zdxk'] as num?)?.toInt() ?? 1,
-          kssj: map['kssj']?.toString() ?? '',
-          jssj: map['jssj']?.toString() ?? '',
+          xkid: campusString(map['xkid']) ?? '',
+          // Sent as a number by this endpoint, so normalise via campusString
+          // rather than assuming a JSON string.
+          xkms: campusString(map['xkms']) ?? '',
+          batchName: campusString(map['mc']) ?? '',
+          // Sent as the string "2"; a plain `as num?` cast yields null here and
+          // silently collapses the per-request limit to 1.
+          zdxk: campusInt(map['zdxk']) ?? 1,
+          kssj: campusString(map['kssj']) ?? '',
+          jssj: campusString(map['jssj']) ?? '',
         );
       }).toList();
     });
@@ -151,25 +235,28 @@ class CampusAdapterImpl implements CampusAdapter {
   @override
   Future<List<Course>> listCourses(String xkid) async {
     return _queue.add(() async {
-      final response = await _client.dio.post<List<int>>(
+      final response = await _postForm(
         '/njs_3033/xsxk_Xbk/getXbkByXkid',
-        data: 'xkid=$xkid',
-        options: Options(contentType: 'application/x-www-form-urlencoded'),
+        'xkid=$xkid',
       );
-      _updateClockOffset(response);
-      final body = _decodeAndParseJson(response);
+      final rows = unwrapCampusRows(
+        _decodeAndParseJson(response),
+        what: '读取课程列表',
+        listKey: 'xbkList',
+      );
 
-      final dataList = body['data'] as List<dynamic>? ?? [];
-      return dataList.map((item) {
-        final map = item as Map<String, dynamic>;
+      return rows.map((map) {
+        final xbkid = campusString(map['xbkid']);
         return Course(
-          kmh: map['kmh']?.toString() ?? '',
-          courseName: map['kcmc']?.toString() ?? '',
-          xbkid: map['xbkid']?.toString(),
-          teacherName: map['jsxm']?.toString(),
-          capacity: (map['setzrs'] as num?)?.toInt(),
-          selected: (map['setyxzrs'] as num?)?.toInt(),
-          remaining: (map['setwxzrs'] as num?)?.toInt(),
+          // Upstream rows carry no kmh; the school submits xbkid.
+          kmh: xbkid ?? '',
+          courseName: campusString(map['xbkmc']) ?? '',
+          xbkid: xbkid,
+          teacherName: campusString(map['jsxm']),
+          capacity: campusInt(map['rsyq']),
+          selected: campusInt(map['yxrs']),
+          remaining: campusInt(map['syme']),
+          credit: campusString(map['xbkxf']),
         );
       }).toList();
     });
@@ -178,20 +265,19 @@ class CampusAdapterImpl implements CampusAdapter {
   @override
   Future<List<SelectionRecord>> listSelections(String xkid) async {
     return _queue.add(() async {
-      final response = await _client.dio.post<List<int>>(
+      final response = await _postForm(
         '/njs_3033/xsxk_Xbk/getStudentXkJlList',
-        data: 'xkid=$xkid',
-        options: Options(contentType: 'application/x-www-form-urlencoded'),
+        'xkid=$xkid',
       );
-      _updateClockOffset(response);
-      final body = _decodeAndParseJson(response);
+      final rows = unwrapCampusRows(
+        _decodeAndParseJson(response),
+        what: '读取已选课程',
+      );
 
-      final dataList = body['data'] as List<dynamic>? ?? [];
-      return dataList.map((item) {
-        final map = item as Map<String, dynamic>;
+      return rows.map((map) {
         return SelectionRecord(
-          kmh: map['kmh']?.toString() ?? '',
-          courseName: map['kcmc']?.toString() ?? '',
+          kmh: campusString(map['kmh']) ?? '',
+          courseName: campusString(map['kmmc']) ?? '',
         );
       }).toList();
     });
@@ -200,33 +286,40 @@ class CampusAdapterImpl implements CampusAdapter {
   @override
   Future<SubmitResult> submit(SubmitSelection command) async {
     return _queue.add(() async {
-      final kmhDtoList = command.kmhList.join(',');
-      final response = await _client.dio.post<List<int>>(
+      // kmhDtoList is a JSON array of objects, not a comma-joined list of ids:
+      //   kmhDtoList=[{"kmh":"<id>"},{"kmh":"<id>"}]
+      // matching the school's own
+      //   saveStudentXkJs({..., kmhDtoList: JSON.stringify([{kmh: ...}])})
+      //
+      // UNVERIFIED against the live server: the only batch on this deployment
+      // closed 2026-04-18, and submitting would mutate a real student's
+      // registration. Derived from the page script, not from a live response.
+      final kmhDtoList = jsonEncode([
+        for (final kmh in command.kmhList) {'kmh': kmh},
+      ]);
+      final response = await _postForm(
         '/njs_3033/xsxk_Xbk/saveStudentXkJs',
-        data:
-            'xkid=${command.xkid}'
+        'xkid=${command.xkid}'
             '&xkms=${command.xkms}'
             '&sftj=1'
             '&kms=${command.kmhList.length}'
-            '&kmhDtoList=$kmhDtoList',
-        options: Options(contentType: 'application/x-www-form-urlencoded'),
+            '&kmhDtoList=${Uri.encodeQueryComponent(kmhDtoList)}',
       );
-      _updateClockOffset(response);
       final body = _decodeAndParseJson(response);
 
-      final success = body['status'] == true || body['status'] == 'true';
-      final result = body['result'] as Map<String, dynamic>?;
-      final msg =
-          result?['msg']?.toString() ??
-          body['msg']?.toString() ??
-          body['message']?.toString();
-
-      if (!success && msg != null) {
-        // Map server messages to typed exceptions so RetryClassifier can act.
-        throw _mapSubmitMessage(msg);
+      // Map the server's message to a typed exception so RetryClassifier can
+      // act on it, rather than letting every failure look retryable.
+      final Map<String, dynamic> result;
+      try {
+        result = unwrapCampusCommand(body, what: '提交选课');
+      } on CampusException catch (e) {
+        if (e.type == CampusExceptionType.unknownResponse) {
+          throw _mapSubmitMessage(e.message);
+        }
+        rethrow;
       }
 
-      return SubmitResult(success: success, message: msg);
+      return SubmitResult(success: true, message: campusString(result['msg']));
     });
   }
 
@@ -286,55 +379,100 @@ class CampusAdapterImpl implements CampusAdapter {
   @override
   Future<WithdrawResult> withdraw(String xkid) async {
     return _queue.add(() async {
-      final response = await _client.dio.post<List<int>>(
+      final response = await _postForm(
         '/njs_3033/xsxk_Xbk/xschXbkxkCz',
-        data: 'xkid=$xkid',
-        options: Options(contentType: 'application/x-www-form-urlencoded'),
+        'xkid=$xkid',
       );
-      _updateClockOffset(response);
-      final body = _decodeAndParseJson(response);
+      final result = unwrapCampusCommand(
+        _decodeAndParseJson(response),
+        what: '退课',
+      );
 
-      final success = body['status'] == true || body['status'] == 'true';
-      final msg = body['msg']?.toString() ?? body['message']?.toString();
-
-      return WithdrawResult(success: success, message: msg);
+      return WithdrawResult(
+        success: true,
+        message: campusString(result['msg']),
+      );
     });
   }
 
   // -- Private helpers -------------------------------------------------------
 
-  /// Fetch student profile from the current session.
-  Future<StudentProfile> _fetchProfile() async {
-    // Attempt to get student info from a known endpoint.
+  /// POST a form-encoded body and refresh the clock offset from the response.
+  ///
+  /// Every course-selection endpoint shares this shape, so the content type and
+  /// the offset bookkeeping live here rather than at each of the six call
+  /// sites.
+  Future<Response<List<int>>> _postForm(String path, String body) async {
     final response = await _client.dio.post<List<int>>(
-      '/njs_3033/xsxk/getStudentXkList',
-      data: '',
+      path,
+      data: body,
       options: Options(contentType: 'application/x-www-form-urlencoded'),
     );
     _updateClockOffset(response);
-    final body = _decodeAndParseJson(response);
+    return response;
+  }
 
-    // If the session is invalid, the server returns an error.
-    if (body['status'] == false || body['status'] == 'false') {
+  /// Fetch student identity from the current course-selection session.
+  ///
+  /// Used by the cookie-only login path, where the portal home page was never
+  /// fetched. Batch rows carry `xsid`; a selection record additionally carries
+  /// the student's name.
+  Future<StudentProfile> _fetchProfile() async {
+    final response = await _postForm('/njs_3033/xsxk/getStudentXkList', '');
+    // Throws sessionExpired on a rejected cookie, which is what makes this a
+    // usable liveness probe for AccountsNotifier.ensureAdapter.
+    final rows = unwrapCampusRows(
+      _decodeAndParseJson(response),
+      what: '校验登录状态',
+    );
+
+    final studentNo = rows
+        .map((r) => campusString(r['xsid']))
+        .firstWhere((v) => v != null, orElse: () => null);
+
+    if (studentNo == null) {
+      // A valid session with zero batches has no xsid to report. The cookie is
+      // good, but this client cannot name the account — surfacing that is
+      // better than inventing a placeholder identity.
       throw const CampusException(
-        message: '会话已过期',
-        type: CampusExceptionType.sessionExpired,
+        message: '登录状态有效，但该账号当前没有任何选课批次，无法读取学生信息',
+        type: CampusExceptionType.unknownResponse,
       );
     }
 
-    // Extract student info from user data.
-    final userData = body['user'] as Map<String, dynamic>?;
-    final studentNo = userData?['xh']?.toString() ?? '';
-    final studentName = userData?['xm']?.toString() ?? '';
+    final studentName = await _fetchStudentName(rows: rows);
+    return StudentProfile(
+      studentNo: studentNo,
+      studentName: studentName ?? studentNo,
+    );
+  }
 
-    if (studentNo.isEmpty) {
-      throw const CampusException(
-        message: '无法获取学生信息',
-        type: CampusExceptionType.sessionExpired,
+  /// Best-effort lookup of the student's display name.
+  ///
+  /// Returns null rather than throwing: the name is display-only, and no login
+  /// should fail because a cosmetic field was unavailable.
+  Future<String?> _fetchStudentName({List<Map<String, dynamic>>? rows}) async {
+    try {
+      final batches = rows ?? const <Map<String, dynamic>>[];
+      final xkid = batches
+          .map((r) => campusString(r['xkid']))
+          .firstWhere((v) => v != null, orElse: () => null);
+      if (xkid == null) return null;
+
+      final response = await _postForm(
+        '/njs_3033/xsxk_Xbk/getStudentXkJlList',
+        'xkid=$xkid',
       );
+      final records = unwrapCampusRows(
+        _decodeAndParseJson(response),
+        what: '读取学生信息',
+      );
+      return records
+          .map((r) => campusString(r['xm']))
+          .firstWhere((v) => v != null, orElse: () => null);
+    } on Exception {
+      return null;
     }
-
-    return StudentProfile(studentNo: studentNo, studentName: studentName);
   }
 
   /// Decode a raw byte response to a string, handling GBK.

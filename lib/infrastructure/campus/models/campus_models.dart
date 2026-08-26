@@ -44,19 +44,25 @@ class SelectionBatch {
   /// Batch ID.
   final String xkid;
 
-  /// Selection mode code ("1", "2", "3").
+  /// Selection mode code, passed back verbatim on submit.
+  ///
+  /// Observed values include `"0"` (选课已结束) as well as the submittable
+  /// `"1"`/`"2"`/`"3"`. See `XkmsMode`.
   final String xkms;
 
-  /// Human-readable batch name.
+  /// Human-readable batch name (`mc` upstream).
   final String batchName;
 
   /// Maximum courses per submission request.
   final int zdxk;
 
-  /// Batch start time (ISO 8601).
+  /// Batch start time, `yyyy-MM-dd HH:mm:ss` in the school's local time.
+  ///
+  /// Not ISO-8601 — the upstream field is a plain local timestamp with a space
+  /// separator, so `DateTime.parse` accepts it but treats it as local.
   final String kssj;
 
-  /// Batch end time (ISO 8601).
+  /// Batch end time, same format as [kssj].
   final String jssj;
 }
 
@@ -70,28 +76,37 @@ class Course {
     this.capacity,
     this.selected,
     this.remaining,
+    this.credit,
   });
 
-  /// Course number — the real submission ID.
+  /// The id submitted to claim this course.
+  ///
+  /// Upstream rows carry no `kmh` field: the school's own page submits the
+  /// row's `xbkid` (`data-kmh="${item.xbkid}"`), and an already-selected
+  /// record's `kmh` matches that `xbkid` exactly. Kept as a separate field
+  /// from [xbkid] so that a future upstream split needs no data migration.
   final String kmh;
 
-  /// Display course name.
+  /// Display course name (`xbkmc` upstream).
   final String courseName;
 
-  /// Display group ID (may differ from kmh).
+  /// Display group ID.
   final String? xbkid;
 
-  /// Teacher name for display.
+  /// Teacher name for display (`jsxm` upstream).
   final String? teacherName;
 
-  /// Total enrollment capacity.
+  /// Total enrollment capacity (`rsyq` upstream).
   final int? capacity;
 
-  /// Already selected count.
+  /// Already selected count (`yxrs` upstream).
   final int? selected;
 
-  /// Remaining spots.
+  /// Remaining spots (`syme` upstream).
   final int? remaining;
+
+  /// Course credit (`xbkxf` upstream), display-only.
+  final String? credit;
 }
 
 /// A record of an already-selected course (for idempotency check).
