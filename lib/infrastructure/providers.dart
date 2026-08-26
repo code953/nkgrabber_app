@@ -53,3 +53,47 @@ final grabTaskDaoProvider = Provider<GrabTaskDao>((ref) {
 final settingsDaoProvider = Provider<SettingsDao>((ref) {
   return ref.watch(appDatabaseProvider).settingsDao;
 });
+
+/// Exposes the singleton settings row and persists edits.
+///
+/// A `StreamProvider` over `SettingsDao.watch()` would be the obvious fit, but
+/// drift schedules a zero-duration cleanup timer when a query stream is
+/// cancelled, and in widget tests that timer outlives the framework's final
+/// pump — every test then fails with "A Timer is still pending". Reading once
+/// and re-reading after each write avoids the stream without giving up
+/// reactivity, since this row only ever changes through this notifier.
+final appSettingsProvider =
+    AsyncNotifierProvider<AppSettingsNotifier, AppSettingsEntry>(
+      AppSettingsNotifier.new,
+    );
+
+/// Reads and writes the singleton `app_settings` row.
+class AppSettingsNotifier extends AsyncNotifier<AppSettingsEntry> {
+  @override
+  Future<AppSettingsEntry> build() => ref.watch(settingsDaoProvider).get();
+
+  Future<void> _apply(Future<void> Function(SettingsDao dao) write) async {
+    final dao = ref.read(settingsDaoProvider);
+    await write(dao);
+    state = AsyncData(await dao.get());
+  }
+
+  /// Persist the UI theme.
+  Future<void> setTheme(String theme) => _apply((d) => d.setTheme(theme));
+
+  /// Persist the user-requested request interval.
+  Future<void> setUserIntervalMs(int ms) =>
+      _apply((d) => d.setUserIntervalMs(ms));
+
+  /// Persist the request interval floor.
+  Future<void> setMinRequestIntervalMs(int ms) =>
+      _apply((d) => d.setMinRequestIntervalMs(ms));
+
+  /// Persist the maximum number of enabled accounts.
+  Future<void> setMaxAccounts(int count) =>
+      _apply((d) => d.setMaxAccounts(count));
+
+  /// Persist the maximum number of accounts grabbing in parallel.
+  Future<void> setMaxConcurrentAccounts(int count) =>
+      _apply((d) => d.setMaxConcurrentAccounts(count));
+}

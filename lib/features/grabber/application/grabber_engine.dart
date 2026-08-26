@@ -22,7 +22,11 @@ import 'package:nkgrabber/infrastructure/database/tables/grab_tasks.dart';
 import 'package:uuid/uuid.dart';
 
 /// Callback to get the campus adapter for an account.
-typedef AdapterResolver = CampusAdapter? Function(String accountId);
+///
+/// Async because adapters live only in memory: after a restart the account
+/// exists in the database but has no client, and rebuilding one requires
+/// reading the stored cookie.
+typedef AdapterResolver = Future<CampusAdapter?> Function(String accountId);
 
 /// The main grabber engine.
 class GrabberEngine {
@@ -53,6 +57,7 @@ class GrabberEngine {
   Timer? _timeoutTimer;
   GrabberState _state = const GrabberState();
   final _stateController = StreamController<GrabberState>.broadcast();
+  bool _disposed = false;
 
   /// Stream of state changes for UI binding.
   Stream<GrabberState> get stateStream => _stateController.stream;
@@ -121,7 +126,7 @@ class GrabberEngine {
     final futures = <Future<void>>[];
 
     for (final accountId in activeIds) {
-      final adapter = _adapterResolver(accountId);
+      final adapter = await _adapterResolver(accountId);
       if (adapter == null) {
         _logger.warn('No adapter for account $accountId');
         continue;
@@ -185,6 +190,19 @@ class GrabberEngine {
     _timeoutTimer?.cancel();
     _timeoutTimer = null;
     _workers.clear();
+
+    // No worker ever started — every account failed to produce an adapter.
+    // Reporting "完成 0/N" here would blame the campus system for what is
+    // really an expired login.
+    if (taskIds.isEmpty) {
+      _updateState(
+        _state.copyWith(
+          status: GrabberStatus.failed,
+          message: '所有账号的登录状态均已失效，请重新添加账号',
+        ),
+      );
+      return;
+    }
 
     final finalStatus = _state.status == GrabberStatus.running
         ? (completedTargets.length == totalTargets
@@ -268,6 +286,11 @@ class GrabberEngine {
   /// Clean up resources.
   void dispose() {
     _timeoutTimer?.cancel();
+    for (final worker in _workers.values) {
+      worker.cancel();
+    }
+    _workers.clear();
+    _disposed = true;
     _stateController.close();
   }
 
@@ -304,6 +327,9 @@ class GrabberEngine {
 
   void _updateState(GrabberState newState) {
     _state = newState;
+    // A worker awaiting its interval can outlive dispose(); adding to a
+    // closed controller would throw from a future nobody is watching.
+    if (_disposed) return;
     _stateController.add(_state);
   }
 }

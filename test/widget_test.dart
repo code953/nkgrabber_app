@@ -86,6 +86,31 @@ Future<void> _seedAccount(AppDatabase db, {String id = 'a1'}) {
   );
 }
 
+/// Insert one course target for the seeded account.
+Future<void> _seedTarget(
+  AppDatabase db, {
+  String id = 't1',
+  String accountId = 'a1',
+  String courseName = '测试课程',
+  int priority = 0,
+  bool enabled = true,
+}) {
+  return db.courseTargetDao.insertTarget(
+    CourseTargetsCompanion.insert(
+      id: id,
+      accountId: accountId,
+      xkid: 'xk-1',
+      xkms: '1',
+      kmh: 'km-$id',
+      batchName: '春季选课',
+      courseName: courseName,
+      priority: Value(priority),
+      enabled: Value(enabled),
+      snapshotAt: _seedNow,
+    ),
+  );
+}
+
 void main() {
   // ═══════════════════════════════════════════════════════════════════════
   // Core Exceptions
@@ -553,25 +578,9 @@ void main() {
       final db = AppDatabase(NativeDatabase.memory());
       await _seedAccount(db);
       // Inserted highest-priority-last to prove the page orders by priority
-      // rather than by insertion.
-      for (final (id, name, priority) in [
-        ('t2', '第二志愿', 1),
-        ('t1', '第一志愿', 0),
-      ]) {
-        await db.courseTargetDao.insertTarget(
-          CourseTargetsCompanion.insert(
-            id: id,
-            accountId: 'a1',
-            xkid: 'xk-1',
-            xkms: '1',
-            kmh: 'km-$id',
-            batchName: '春季选课',
-            courseName: name,
-            priority: Value(priority),
-            snapshotAt: _seedNow,
-          ),
-        );
-      }
+      // rather than by insertion. 't1'/priority 0 are the helper defaults.
+      await _seedTarget(db, id: 't2', courseName: '第二志愿', priority: 1);
+      await _seedTarget(db, courseName: '第一志愿');
 
       await _pumpApp(tester, database: db);
       await openCourses(tester);
@@ -583,6 +592,125 @@ void main() {
           .widgetList<TargetListCard>(find.byType(TargetListCard))
           .toList();
       expect(cards.map((c) => c.courseName), ['第一志愿', '第二志愿']);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Grabber page
+  // ═══════════════════════════════════════════════════════════════════════
+  group('GrabberPage', () {
+    Future<void> openGrabber(WidgetTester tester) async {
+      await tester.tap(find.text('抢课').first);
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('start is disabled with no accounts', (tester) async {
+      await _pumpApp(tester);
+      await openGrabber(tester);
+
+      expect(find.text('尚未就绪'), findsOneWidget);
+      final button = tester.widget<FilledButton>(find.byType(FilledButton));
+      expect(button.onPressed, isNull);
+    });
+
+    testWidgets('start stays disabled when an account has no targets', (
+      tester,
+    ) async {
+      final db = AppDatabase(NativeDatabase.memory());
+      await _seedAccount(db);
+      await _pumpApp(tester, database: db);
+      await openGrabber(tester);
+
+      // An account alone is not enough — starting here would create a task
+      // that instantly fails with '没有可用的课程目标'.
+      expect(find.text('尚未就绪'), findsOneWidget);
+      final button = tester.widget<FilledButton>(find.byType(FilledButton));
+      expect(button.onPressed, isNull);
+    });
+
+    testWidgets('start is enabled once an enabled target exists', (
+      tester,
+    ) async {
+      final db = AppDatabase(NativeDatabase.memory());
+      await _seedAccount(db);
+      await _seedTarget(db);
+      await _pumpApp(tester, database: db);
+      await openGrabber(tester);
+
+      expect(find.text('准备就绪'), findsOneWidget);
+      expect(find.text('将为 1 个账号抢课'), findsOneWidget);
+      final button = tester.widget<FilledButton>(find.byType(FilledButton));
+      expect(button.onPressed, isNotNull);
+    });
+
+    testWidgets('disabled targets do not count towards readiness', (
+      tester,
+    ) async {
+      final db = AppDatabase(NativeDatabase.memory());
+      await _seedAccount(db);
+      await _seedTarget(db, enabled: false);
+      await _pumpApp(tester, database: db);
+      await openGrabber(tester);
+
+      expect(find.text('尚未就绪'), findsOneWidget);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Settings page
+  // ═══════════════════════════════════════════════════════════════════════
+  group('SettingsPage', () {
+    Future<void> openSettings(WidgetTester tester) async {
+      await tester.tap(find.text('设置'));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('renders the stored settings row', (tester) async {
+      final db = AppDatabase(NativeDatabase.memory());
+      // Seed the singleton row, then change it away from the defaults so a
+      // passing test cannot be explained by the widget's fallbacks.
+      await db.settingsDao.get();
+      await db.settingsDao.setUserIntervalMs(2500);
+      await db.settingsDao.setMaxAccounts(7);
+      await db.settingsDao.setTheme('anime');
+
+      await _pumpApp(tester, database: db);
+      await openSettings(tester);
+
+      expect(find.text('2500 ms'), findsOneWidget);
+      expect(find.textContaining('7 个'), findsOneWidget);
+      expect(find.text('二次元 (粉紫)'), findsOneWidget);
+    });
+
+    testWidgets('persists a slider release to the database', (tester) async {
+      final db = AppDatabase(NativeDatabase.memory());
+      await _pumpApp(tester, database: db);
+      await openSettings(tester);
+
+      // Drag the 请求间隔 slider (the first one) to its maximum.
+      final slider = find.byType(Slider).first;
+      await tester.drag(slider, const Offset(500, 0));
+      await tester.pumpAndSettle();
+
+      final stored = await db.settingsDao.get();
+      expect(stored.userIntervalMs, 5000);
+      expect(find.text('5000 ms'), findsOneWidget);
+    });
+
+    testWidgets('warns when the user interval sits below the floor', (
+      tester,
+    ) async {
+      final db = AppDatabase(NativeDatabase.memory());
+      await db.settingsDao.get();
+      await db.settingsDao.setUserIntervalMs(500);
+      await db.settingsDao.setMinRequestIntervalMs(1500);
+
+      await _pumpApp(tester, database: db);
+      await openSettings(tester);
+
+      // effectiveIntervalMs = max(user, floor) — the UI must say so rather
+      // than implying the 500 ms it shows is what will be used.
+      expect(find.textContaining('实际按 1500 ms 执行'), findsOneWidget);
     });
   });
 }

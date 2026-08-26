@@ -13,6 +13,8 @@ import 'package:nkgrabber/app/router.dart';
 import 'package:nkgrabber/app/theme.dart';
 import 'package:nkgrabber/core/logging/app_logger.dart';
 import 'package:nkgrabber/core/logging/log_sanitizer.dart';
+import 'package:nkgrabber/features/grabber/application/grabber_controller.dart';
+import 'package:nkgrabber/infrastructure/providers.dart';
 import 'package:nkgrabber/l10n/app_localizations.dart';
 
 void main() {
@@ -59,9 +61,26 @@ class _NKGrabberAppState extends ConsumerState<NKGrabberApp> {
   late final GoRouter _router = createRouter();
 
   @override
+  void initState() {
+    super.initState();
+    // Tasks still marked `running` in the database are leftovers from a crash
+    // or a kill — this process cannot own them. Flag them as interrupted so
+    // they are not mistaken for live tasks. Per the state machine there is no
+    // auto-recovery; the user restarts manually.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(grabberProvider.notifier).markInterrupted();
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
-    // TODO: Read theme mode from settings provider.
-    const themeMode = AppThemeMode.system;
+    // Falls back to `system` while the settings row is still loading, which is
+    // also the stored default — so the first frame does not flash a theme the
+    // user did not pick.
+    final themeMode = AppThemeMode.fromString(
+      ref.watch(appSettingsProvider).valueOrNull?.theme ??
+          AppThemeMode.system.name,
+    );
 
     return MaterialApp.router(
       title: 'NKgrabber',

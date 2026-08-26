@@ -5,43 +5,166 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nkgrabber/app/theme.dart';
-import 'package:nkgrabber/core/utils/constants.dart';
+import 'package:nkgrabber/core/utils/diagnostics_exporter.dart';
+import 'package:nkgrabber/features/accounts/application/accounts_notifier.dart';
+import 'package:nkgrabber/features/grabber/application/grabber_controller.dart';
+import 'package:nkgrabber/infrastructure/database/app_database.dart';
+import 'package:nkgrabber/infrastructure/providers.dart';
 
-class SettingsPage extends StatelessWidget {
+class SettingsPage extends ConsumerWidget {
   const SettingsPage({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    // TODO: Wire to SettingsDao and providers via Riverpod.
+  Widget build(BuildContext context, WidgetRef ref) {
+    final settings = ref.watch(appSettingsProvider);
+
     return Scaffold(
       appBar: AppBar(title: const Text('设置')),
-      body: ListView(
-        children: [
-          const _SectionHeader(title: '外观'),
-          const _ThemeSetting(),
-          const Divider(),
-          const _SectionHeader(title: '抢课'),
-          const _IntervalSetting(),
-          const _MinIntervalSetting(),
-          const _MaxAccountsSetting(),
-          const _MaxConcurrentSetting(),
-          const Divider(),
-          const _SectionHeader(title: '数据'),
-          ListTile(
-            leading: const Icon(Icons.bug_report_outlined),
-            title: const Text('导出诊断包'),
-            subtitle: const Text('最近3次任务日志（已脱敏）'),
-            onTap: () {
-              // TODO: Export diagnostics.
-            },
-          ),
-          const Divider(),
-          const _SectionHeader(title: '关于'),
+      body: switch (settings) {
+        AsyncError(:final error) => Center(child: Text('无法读取设置：$error')),
+        AsyncData(:final value) => _SettingsBody(settings: value),
+        _ => const Center(child: CircularProgressIndicator()),
+      },
+    );
+  }
+}
+
+class _SettingsBody extends ConsumerWidget {
+  const _SettingsBody({required this.settings});
+
+  final AppSettingsEntry settings;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final notifier = ref.watch(appSettingsProvider.notifier);
+    // Rebuilding the engine mid-run would orphan its workers, so the values it
+    // reads at construction stay locked while a task is active.
+    final isRunning = ref.watch(grabberProvider).isRunning;
+
+    return ListView(
+      children: [
+        const _SectionHeader(title: '外观'),
+        _ThemeSetting(
+          selected: AppThemeMode.fromString(settings.theme),
+          onChanged: (mode) => notifier.setTheme(mode.name),
+        ),
+        const Divider(),
+        const _SectionHeader(title: '抢课'),
+        if (isRunning)
           const ListTile(
-            leading: Icon(Icons.info_outline),
-            title: Text('NKgrabber'),
-            subtitle: Text('v1.0.0'),
+            leading: Icon(Icons.lock_outline),
+            subtitle: Text('抢课进行中，暂时无法修改以下设置'),
+          ),
+        _SliderSetting(
+          icon: Icons.timer_outlined,
+          title: '请求间隔',
+          value: settings.userIntervalMs,
+          min: 500,
+          max: 5000,
+          divisions: 9,
+          format: (v) => '$v ms',
+          subtitleHint: settings.userIntervalMs < settings.minRequestIntervalMs
+              ? '低于下限，实际按 ${settings.minRequestIntervalMs} ms 执行'
+              : null,
+          onChanged: isRunning ? null : notifier.setUserIntervalMs,
+        ),
+        _SliderSetting(
+          icon: Icons.speed_outlined,
+          title: '间隔下限',
+          value: settings.minRequestIntervalMs,
+          min: 500,
+          max: 3000,
+          divisions: 10,
+          format: (v) => '$v ms',
+          subtitleHint: '过低可能触发学校风控',
+          onChanged: isRunning ? null : notifier.setMinRequestIntervalMs,
+        ),
+        _SliderSetting(
+          icon: Icons.people_outline,
+          title: '最大账号数',
+          value: settings.maxAccounts,
+          min: 1,
+          max: 20,
+          divisions: 19,
+          format: (v) => '$v 个',
+          subtitleHint: '超出后按添加时间从新到旧停用',
+          onChanged: isRunning
+              ? null
+              : (v) async {
+                  await notifier.setMaxAccounts(v);
+                  // Applying the new ceiling is the point of the setting;
+                  // persisting it without enforcing would be a no-op.
+                  await ref
+                      .read(accountsProvider.notifier)
+                      .enforceAccountLimit(v);
+                },
+        ),
+        _SliderSetting(
+          icon: Icons.dynamic_feed_outlined,
+          title: '最大并发账号数',
+          value: settings.maxConcurrentAccounts,
+          min: 1,
+          max: 10,
+          divisions: 9,
+          format: (v) => '$v 个',
+          subtitleHint: '同时抢课的账号数量',
+          onChanged: isRunning ? null : notifier.setMaxConcurrentAccounts,
+        ),
+        const Divider(),
+        const _SectionHeader(title: '数据'),
+        ListTile(
+          leading: const Icon(Icons.bug_report_outlined),
+          title: const Text('导出诊断包'),
+          subtitle: const Text('最近3次任务日志（已脱敏）'),
+          onTap: () => _exportDiagnostics(context, ref),
+        ),
+        const Divider(),
+        const _SectionHeader(title: '关于'),
+        const ListTile(
+          leading: Icon(Icons.info_outline),
+          title: Text('NKgrabber'),
+          subtitle: Text('v1.0.0'),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _exportDiagnostics(BuildContext context, WidgetRef ref) async {
+    final exporter = DiagnosticsExporter(
+      grabTaskDao: ref.read(grabTaskDaoProvider),
+    );
+    final json = (await exporter.export()).toSanitizedJson();
+
+    if (!context.mounted) return;
+    // Copied to the clipboard rather than written to a file: the client has no
+    // file-picker dependency, and this keeps the data on-device by default.
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('诊断包'),
+        content: SizedBox(
+          width: 520,
+          child: SingleChildScrollView(
+            child: SelectableText(
+              json,
+              style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('关闭'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              await Clipboard.setData(ClipboardData(text: json));
+              if (context.mounted) Navigator.of(context).pop();
+            },
+            child: const Text('复制'),
           ),
         ],
       ),
@@ -68,24 +191,20 @@ class _SectionHeader extends StatelessWidget {
   }
 }
 
-class _ThemeSetting extends StatefulWidget {
-  const _ThemeSetting();
+class _ThemeSetting extends StatelessWidget {
+  const _ThemeSetting({required this.selected, required this.onChanged});
 
-  @override
-  State<_ThemeSetting> createState() => _ThemeSettingState();
-}
-
-class _ThemeSettingState extends State<_ThemeSetting> {
-  AppThemeMode _selected = AppThemeMode.system;
+  final AppThemeMode selected;
+  final ValueChanged<AppThemeMode> onChanged;
 
   @override
   Widget build(BuildContext context) {
     return ListTile(
       leading: const Icon(Icons.palette_outlined),
       title: const Text('主题'),
-      subtitle: Text(_selected.label),
-      onTap: () {
-        showDialog<AppThemeMode>(
+      subtitle: Text(selected.label),
+      onTap: () async {
+        final picked = await showDialog<AppThemeMode>(
           context: context,
           builder: (context) => SimpleDialog(
             title: const Text('选择主题'),
@@ -93,10 +212,10 @@ class _ThemeSettingState extends State<_ThemeSetting> {
               return ListTile(
                 title: Text(mode.label),
                 leading: Icon(
-                  mode == _selected
+                  mode == selected
                       ? Icons.radio_button_checked
                       : Icons.radio_button_unchecked,
-                  color: mode == _selected
+                  color: mode == selected
                       ? Theme.of(context).colorScheme.primary
                       : null,
                 ),
@@ -104,12 +223,8 @@ class _ThemeSettingState extends State<_ThemeSetting> {
               );
             }).toList(),
           ),
-        ).then((value) {
-          if (value != null) {
-            setState(() => _selected = value);
-            // TODO: Persist via SettingsDao.
-          }
-        });
+        );
+        if (picked != null) onChanged(picked);
       },
     );
   }
@@ -126,27 +241,35 @@ extension on AppThemeMode {
 /// A slider-backed numeric setting row.
 ///
 /// All four grabber limits share this shape, so they share the widget.
+///
+/// Local state tracks the drag so the thumb follows the finger, but only the
+/// release is persisted — writing on every frame would issue dozens of
+/// database updates per gesture.
 class _SliderSetting extends StatefulWidget {
   const _SliderSetting({
     required this.icon,
     required this.title,
-    required this.initial,
+    required this.value,
     required this.min,
     required this.max,
     required this.divisions,
     required this.format,
+    required this.onChanged,
     this.subtitleHint,
   });
 
   final IconData icon;
   final String title;
-  final double initial;
+  final int value;
   final double min;
   final double max;
   final int divisions;
 
   /// Renders the current value, e.g. `(v) => '$v ms'`.
   final String Function(int value) format;
+
+  /// Persists the released value. Null disables the slider.
+  final void Function(int value)? onChanged;
 
   /// Optional second line explaining what the value protects against.
   final String? subtitleHint;
@@ -156,104 +279,42 @@ class _SliderSetting extends StatefulWidget {
 }
 
 class _SliderSettingState extends State<_SliderSetting> {
-  late double _value = widget.initial;
+  /// Non-null only while dragging.
+  double? _dragValue;
 
   @override
   Widget build(BuildContext context) {
+    final current = _dragValue ?? widget.value.toDouble();
     final hint = widget.subtitleHint;
+    final onChanged = widget.onChanged;
+
     return ListTile(
       leading: Icon(widget.icon),
       title: Text(widget.title),
       subtitle: Text(
         hint == null
-            ? widget.format(_value.toInt())
-            : '${widget.format(_value.toInt())} · $hint',
+            ? widget.format(current.toInt())
+            : '${widget.format(current.toInt())} · $hint',
       ),
       trailing: SizedBox(
         width: 200,
         child: Slider(
-          value: _value,
+          value: current.clamp(widget.min, widget.max),
           min: widget.min,
           max: widget.max,
           divisions: widget.divisions,
-          label: widget.format(_value.toInt()),
-          onChanged: (v) {
-            setState(() => _value = v);
-            // TODO: Persist via SettingsDao.
-          },
+          label: widget.format(current.toInt()),
+          onChanged: onChanged == null
+              ? null
+              : (v) => setState(() => _dragValue = v),
+          onChangeEnd: onChanged == null
+              ? null
+              : (v) {
+                  setState(() => _dragValue = null);
+                  onChanged(v.toInt());
+                },
         ),
       ),
-    );
-  }
-}
-
-class _IntervalSetting extends StatelessWidget {
-  const _IntervalSetting();
-
-  @override
-  Widget build(BuildContext context) {
-    return _SliderSetting(
-      icon: Icons.timer_outlined,
-      title: '请求间隔',
-      initial: AppConstants.defaultUserIntervalMs.toDouble(),
-      min: 500,
-      max: 5000,
-      divisions: 9,
-      format: (v) => '$v ms',
-    );
-  }
-}
-
-class _MinIntervalSetting extends StatelessWidget {
-  const _MinIntervalSetting();
-
-  @override
-  Widget build(BuildContext context) {
-    return _SliderSetting(
-      icon: Icons.speed_outlined,
-      title: '间隔下限',
-      initial: AppConstants.defaultMinRequestIntervalMs.toDouble(),
-      min: 500,
-      max: 3000,
-      divisions: 10,
-      format: (v) => '$v ms',
-      subtitleHint: '过低可能触发学校风控',
-    );
-  }
-}
-
-class _MaxAccountsSetting extends StatelessWidget {
-  const _MaxAccountsSetting();
-
-  @override
-  Widget build(BuildContext context) {
-    return _SliderSetting(
-      icon: Icons.people_outline,
-      title: '最大账号数',
-      initial: AppConstants.defaultMaxAccounts.toDouble(),
-      min: 1,
-      max: 20,
-      divisions: 19,
-      format: (v) => '$v 个',
-      subtitleHint: '超出后按添加时间从新到旧停用',
-    );
-  }
-}
-
-class _MaxConcurrentSetting extends StatelessWidget {
-  const _MaxConcurrentSetting();
-
-  @override
-  Widget build(BuildContext context) {
-    return _SliderSetting(
-      icon: Icons.dynamic_feed_outlined,
-      title: '最大并发账号数',
-      initial: AppConstants.defaultMaxConcurrentAccounts.toDouble(),
-      min: 1,
-      max: 10,
-      divisions: 9,
-      format: (v) => '$v 个',
-      subtitleHint: '同时抢课的账号数量',
     );
   }
 }
