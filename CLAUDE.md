@@ -88,6 +88,9 @@ Every page reads its data through providers; there are no stubs left.
   - The portal's `.jsmeb` endpoints take a **JSON** body under a form-encoded Content-Type. A genuinely form-encoded `params=[...]` is rejected with 参数格式非法.
   - The same field is typed inconsistently across endpoints (`zdxk` is the string `"2"`, `xkms` is the number `0`) — always go through `campusInt` / `campusString`.
   - Reaching the course-selection app needs the full `ssolx=5` SSO handshake (`token` + `apiUrl` + `userid`); a bare `GET /njs_3033/xsxk2` answers 403.
+- **Two transport-level workarounds exist because the school's server is broken, not because we prefer them.** Both were diagnosed by capturing raw response bytes; both are pinned by an end-to-end test against a loopback server.
+  - Every post-login response carries a bare `Set-Cookie: HttpOnly=` next to the real one. The portal meant to append the `HttpOnly` *attribute* to `JSESSIONID` and emitted a separate header line instead. `dart:io` refuses to parse it, and `CookieManager` forces the whole map with `.toList()`, so that single throw discards the **valid** `JSESSIONID` on the same response and dio reports `DioException [unknown]: null`. Hence `CookieManager(_cookieJar, ignoreInvalidCookies: true)` — dropping just the bad fragment is what browsers do. Do not remove it, and keep `dio_cookie_manager >=3.4.0`.
+  - The SSO chain is followed **by hand**, one hop per request (`_followSsoRedirects`). Dio's `followRedirects` lives in the HTTP adapter, *below* the interceptor chain, so `CookieManager` never sees intermediate responses — and `gdpk` is set on hop 0 only. With automatic following the final hop arrives cookie-less and the server answers 403.
 
   All of this is pinned by verbatim fixtures in `test/campus_parsing_test.dart`. Before changing a parser, read the fixture — if a change contradicts one, the change is wrong unless the school actually changed. `campus_envelope.dart` is the single unwrap layer; do not re-implement envelope checks at a call site.
 - **The submit path is the one link never verified against the live server.** `saveStudentXkJs`'s `kmhDtoList` shape was derived from the school's own page script, not from a response: the only batch on this deployment closed 2026-04-18, and submitting would have mutated a real student's registration. The `UNVERIFIED` comment at that call site stays until someone confirms it during an open batch.
@@ -151,11 +154,15 @@ Tests live in `test/widget_test.dart` and `test/campus_parsing_test.dart`.
 - `ClockSyncStatus` (`campusNow` offset in both directions)
 - Interval calculation (`max(userIntervalMs, minRequestIntervalMs)`)
 
-`campus_parsing_test.dart` (33 cases) covers the response-parsing layer:
+`campus_parsing_test.dart` (38 cases) covers the response-parsing layer:
 `RsaEncryptor.extractFromHtml`, the `campus_envelope` unwrappers,
 `campusInt`/`campusString`, portal SSO (`parsePortalSession`,
-`findCourseSelectionApp`, `buildSsoUrl`), `Xkms` classification, and the submit
-payload shape.
+`findCourseSelectionApp`, `buildSsoUrl`), `Xkms` classification, the submit
+payload shape, and the two transport-level workarounds the school's server
+forces on us (malformed `Set-Cookie`, manual SSO redirect following). The last
+group runs a loopback `HttpServer` that reproduces the portal's behaviour and
+drives the real `CampusClient` + `CampusAdapterImpl` through it — asserting on
+a hand-built `CookieManager` would have passed even with the fix reverted.
 
 **Every fixture in that file is a verbatim excerpt of a real response** captured
 from the live deployment, with sensitive values (RSA modulus, session ids,
@@ -180,7 +187,7 @@ which does not resolve in a test, so the page would spin forever and
 - `SettingsPage`: renders the stored row, persists a slider release, warns
   when the user interval is below the floor
 
-Run with `flutter test`. All 90 tests must pass before committing.
+Run with `flutter test`. All 94 tests must pass before committing.
 
 New tests must be checked negatively — break the wiring under test and
 confirm the case goes red. A green test proves nothing on its own; several of

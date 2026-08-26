@@ -400,6 +400,10 @@ abstract interface class CampusAdapter {
 
 关于 SSO：登录门户**不足以**进入选课应用，裸 `GET /njs_3033/xsxk2` 返回 403。该应用注册为 `ssolx=5`，必须把 `token`、`apiUrl`、`userid` 三个参数穿过跳转，选课主机才会下发 `gdpk`。`appurl` 携带各部署独立的 `ssoappid`，只能运行时读注册表。遇到其他 `ssolx` 取值时抛出可读错误，不猜 URL。
 
+**SSO 跳转必须逐跳手动跟随。** 实测链路为 `xsxk2` →(302，下发 `gdpk`) `loginRedirect` →(302) `xsxk2`，`gdpk` 只在第 0 跳下发。dio 的 `followRedirects` 在 HTTP adapter 内实现，位于拦截器链**下方**，CookieManager 看不到中间响应，`gdpk` 从未进入 jar，末跳空 cookie 抵达被拒 403。因此 `_followSsoRedirects` 关闭自动跟随、逐跳请求，使每个响应都经过拦截器。
+
+**门户会发畸形 Set-Cookie。** 每个登录后响应都多带一行裸的 `Set-Cookie: HttpOnly=`（本意是给 `JSESSIONID` 追加 `HttpOnly` 属性，写成了独立 header）。`dart:io` 拒绝解析，而 `CookieManager` 用 `.toList()` 强制求值整条链，一处抛异常会连带丢弃**同一响应里合法的 `JSESSIONID`**，表现为 `DioException [unknown]: null`。故必须启用 `ignoreInvalidCookies: true`（`dio_cookie_manager >= 3.4.0`），只跳过坏片段 —— 这也是浏览器的行为。
+
 关于课程列表：上游行**不携带 `kmh`**，只有 `xbkid`；学校自己的页面也是拿 `xbkid` 提交。已实测确认一条已选记录的 `kmh` 与 `xbkList` 中某行的 `xbkid` 完全一致，故本客户端以 `xbkid` 作为提交 ID。
 
 **提交路径未经实测**：本部署唯一批次已于 2026-04-18 结束，实际提交会改动真实学生的选课记录。`kmhDtoList` 的形状取自页面脚本 `saveStudentXkJs({…, kmhDtoList: JSON.stringify([{kmh: …}])})`，代码中已标注 UNVERIFIED。
@@ -634,6 +638,7 @@ idle → preparing → running → success
 
 | 日期 | 版本 | 作者 | 变更摘要 |
 | --- | --- | --- | --- |
+| 2026-08-26 | v1.5 | Claude | §7.1 补入两处传输层实测结论：SSO 跳转必须逐跳手动跟随（`gdpk` 只在第 0 跳下发，dio 的自动跟随在拦截器链下方，末跳空 cookie 被拒 403）；门户每个登录后响应多发一行畸形的 `Set-Cookie: HttpOnly=`，会连带丢弃同响应中合法的 `JSESSIONID`，须启用 `ignoreInvalidCookies`。二者即"添加账号失败"的根因，均由抓原始字节定位、并以 loopback server 端到端测试锁定 |
 | 2026-08-26 | v1.4 | Claude | 按 campus.nks.edu.cn 实测校正学校接口章节：§7.1 补入门户会话/应用注册表/`ssolx=5` SSO 三步，登录体改为 JSON，课程列表字段按实际响应列出，`kmh` 由 `xbkid` 提供（§3 术语与 §5.1 `CourseTarget` 同步）；§7.2 改写为完整的响应信封契约（`status` 是整数、负载在 `result`、缺 `result` 与 `result: null` 的区别、401/601/602 映射、字段类型不一致），编码更正为「实测 UTF-8，`decodeGbk` 先试 UTF-8 再回落」；§7.5 与 D-11 补入 `xkms="0"` = 选课已结束这一已知终态，与"未知取值"分开处理；§12 要求 fixture 为真实响应逐字摘录。提交路径因唯一批次已于 2026-04-18 结束而未实测，已在 §7.1 与代码中标注 UNVERIFIED |
 | 2026-07-23 | v1.3 | Notion AI | D-11 最终定稿：`xkms` 采用固定枚举（`1/2/3` = 抢选/正选/补退选）、`zdxk` 每批次实时读取；§7.5 由"兼容层（视为可变）"改写为"字段处理（xkms 稳定 / zdxk 可变）"，删除远程覆盖目录与 `AppSettings.campusOverrideUrl` 相关设计；§15 合并为单一"定稿结论"表（D-11 行插入至 D-10 与 D-12 之间）并移除 §15.2；服务端无变更 |
 | 2026-07-23 | v1.2 | Notion AI | 根据产品负责人回答固化 §15 中 D-01–D-10、D-12–D-14 为定稿（D-11 保留为待确认）；同步更新 §2.3 崩溃上报默认策略、§7.3 移除预热、§7.5 新增学校字段兼容层（建议方案）、§9.2 最大运行时长 30 min、§9.3 提交步骤、§10.1 设置项与首次运行同意页、§11 各平台产物与 §11.2/§11.3 崩溃与更新策略；服务端同步新增崩溃上报接口、激活码格式与不支持强制解绑 |
