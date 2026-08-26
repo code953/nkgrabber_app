@@ -259,6 +259,43 @@ class AccountsNotifier extends StateNotifier<AccountsState> {
   /// Get or create the campus adapter for an account.
   CampusAdapter? getAdapter(String accountId) => _adapters[accountId];
 
+  /// Get the adapter for an account, rebuilding it from the stored cookie if
+  /// this process has not talked to that account yet.
+  ///
+  /// Adapters only exist in memory, so after a restart every account has one
+  /// stored cookie but no client. Returns null when the cookie is missing —
+  /// the caller must then prompt for a fresh login rather than silently
+  /// issuing unauthenticated requests.
+  Future<CampusAdapter?> ensureAdapter(String accountId) async {
+    final existing = _adapters[accountId];
+    if (existing != null) return existing;
+
+    final account = await _accountDao.getById(accountId);
+    if (account == null) return null;
+
+    final gdpk = await _secureStorage.read(key: account.cookieJarRef);
+    if (gdpk == null || gdpk.isEmpty) {
+      _logger.warn('No stored cookie for account $accountId');
+      return null;
+    }
+
+    final client = CampusClient(accountId: accountId);
+    final adapter = CampusAdapterImpl(client: client);
+    try {
+      await adapter.validateCookie(gdpk);
+    } on Exception catch (e) {
+      client.dispose();
+      await _accountDao.updateStatus(accountId, AccountStatus.expired);
+      await loadAccounts();
+      _logger.warn('Stored cookie rejected for account $accountId', e);
+      return null;
+    }
+
+    _adapters[accountId] = adapter;
+    _clients[accountId] = client;
+    return adapter;
+  }
+
   /// Clean up ephemeral accounts on normal exit.
   Future<void> cleanupEphemeral() async {
     final accounts = await _accountDao.getAll();

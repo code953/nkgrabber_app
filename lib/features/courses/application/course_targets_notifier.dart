@@ -8,9 +8,66 @@ import 'dart:async';
 import 'package:drift/drift.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nkgrabber/core/logging/app_logger.dart';
+import 'package:nkgrabber/features/accounts/application/accounts_notifier.dart';
+import 'package:nkgrabber/infrastructure/campus/models/campus_models.dart';
 import 'package:nkgrabber/infrastructure/database/app_database.dart';
 import 'package:nkgrabber/infrastructure/database/daos/course_target_dao.dart';
+import 'package:nkgrabber/infrastructure/providers.dart';
 import 'package:uuid/uuid.dart';
+
+/// The account whose course targets are being configured.
+///
+/// Null until the user picks one; the course page shows a picker in that case.
+final selectedAccountIdProvider = StateProvider<String?>((ref) => null);
+
+/// Course targets for [selectedAccountIdProvider].
+///
+/// Family-keyed on the account id so switching accounts yields a fresh
+/// notifier instead of leaking the previous account's targets.
+final courseTargetsProvider =
+    StateNotifierProvider.family<
+      CourseTargetsNotifier,
+      CourseTargetsState,
+      String
+    >((ref, accountId) {
+      return CourseTargetsNotifier(
+        courseTargetDao: ref.watch(courseTargetDaoProvider),
+        accountId: accountId,
+      )..load();
+    });
+
+/// Selection batches fetched from the campus system for a given account.
+///
+/// This is the one place the course page touches the network. It fails loudly
+/// rather than returning an empty list, so "not logged in" never looks like
+/// "no batches available".
+final batchesProvider = FutureProvider.family<List<SelectionBatch>, String>((
+  ref,
+  accountId,
+) async {
+  final adapter = await ref
+      .watch(accountsProvider.notifier)
+      .ensureAdapter(accountId);
+  if (adapter == null) {
+    throw StateError('账号登录已失效，请重新添加账号');
+  }
+  return adapter.listBatches();
+});
+
+/// Courses available within a batch.
+final coursesProvider =
+    FutureProvider.family<List<Course>, ({String accountId, String xkid})>((
+      ref,
+      key,
+    ) async {
+      final adapter = await ref
+          .watch(accountsProvider.notifier)
+          .ensureAdapter(key.accountId);
+      if (adapter == null) {
+        throw StateError('账号登录已失效，请重新添加账号');
+      }
+      return adapter.listCourses(key.xkid);
+    });
 
 /// State for the course targets list.
 class CourseTargetsState {
@@ -94,7 +151,8 @@ class CourseTargetsNotifier extends StateNotifier<CourseTargetsState> {
       );
 
       await load();
-      _logger.info('Target added: $courseName');
+      // Course names are sensitive; log the opaque target key instead.
+      _logger.info('Target added for batch $xkid');
       return true;
     } on Exception catch (e) {
       state = state.copyWith(error: e.toString());

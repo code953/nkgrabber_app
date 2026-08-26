@@ -1,5 +1,6 @@
 import 'dart:math';
 
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,6 +10,7 @@ import 'package:nkgrabber/core/logging/log_sanitizer.dart';
 import 'package:nkgrabber/core/security/secure_storage.dart';
 import 'package:nkgrabber/core/utils/constants.dart';
 import 'package:nkgrabber/core/utils/extensions.dart';
+import 'package:nkgrabber/features/courses/presentation/course_config_page.dart';
 import 'package:nkgrabber/features/grabber/application/retry_classifier.dart';
 import 'package:nkgrabber/features/grabber/domain/grabber_state.dart';
 import 'package:nkgrabber/infrastructure/campus/clock_sync.dart';
@@ -46,8 +48,11 @@ class _FakeSecureStorage implements SecureStorage {
 /// The production `appDatabaseProvider` opens a file under the application
 /// support directory, which does not resolve in a widget test — the accounts
 /// page would spin forever and `pumpAndSettle` would time out.
-Future<AppDatabase> _pumpApp(WidgetTester tester) async {
-  final db = AppDatabase(NativeDatabase.memory());
+Future<AppDatabase> _pumpApp(
+  WidgetTester tester, {
+  AppDatabase? database,
+}) async {
+  final db = database ?? AppDatabase(NativeDatabase.memory());
   addTearDown(db.close);
 
   await tester.pumpWidget(
@@ -61,6 +66,24 @@ Future<AppDatabase> _pumpApp(WidgetTester tester) async {
   );
   await tester.pumpAndSettle();
   return db;
+}
+
+const _seedNow = '2026-01-01T00:00:00.000Z';
+
+/// Insert one ready account so pages that need an account can render.
+Future<void> _seedAccount(AppDatabase db, {String id = 'a1'}) {
+  return db.accountDao.insertAccount(
+    AccountsCompanion.insert(
+      id: id,
+      displayName: '测试账号',
+      studentNo: '20260001',
+      loginType: LoginType.password,
+      cookieJarRef: 'cookie-$id',
+      status: AccountStatus.ready,
+      createdAt: _seedNow,
+      updatedAt: _seedNow,
+    ),
+  );
 }
 
 void main() {
@@ -471,32 +494,8 @@ void main() {
 
     testWidgets('lists accounts loaded from the database', (tester) async {
       final db = AppDatabase(NativeDatabase.memory());
-      addTearDown(db.close);
-
-      const now = '2026-01-01T00:00:00.000Z';
-      await db.accountDao.insertAccount(
-        AccountsCompanion.insert(
-          id: 'a1',
-          displayName: '测试账号',
-          studentNo: '20260001',
-          loginType: LoginType.password,
-          cookieJarRef: 'cookie-a1',
-          status: AccountStatus.ready,
-          createdAt: now,
-          updatedAt: now,
-        ),
-      );
-
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [
-            appDatabaseProvider.overrideWithValue(db),
-            secureStorageProvider.overrideWithValue(_FakeSecureStorage()),
-          ],
-          child: const NKGrabberApp(),
-        ),
-      );
-      await tester.pumpAndSettle();
+      await _seedAccount(db);
+      await _pumpApp(tester, database: db);
 
       expect(find.text('还没有账号'), findsNothing);
       expect(find.text('测试账号'), findsOneWidget);
@@ -507,7 +506,6 @@ void main() {
       tester,
     ) async {
       await _pumpApp(tester);
-
       // The 800x600 default surface takes the desktop branch, so this is the
       // NavigationRail that threw "No MaterialLocalizations found" while
       // `localizationsDelegates` was left unset: it calls
@@ -520,6 +518,71 @@ void main() {
       expect(Localizations.localeOf(context).languageCode, 'zh');
       expect(MaterialLocalizations.of(context), isNotNull);
       expect(S.of(context), isNotNull);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Course config page
+  // ═══════════════════════════════════════════════════════════════════════
+  group('CourseConfigPage', () {
+    /// Navigate to the 课程 tab via the NavigationRail.
+    Future<void> openCourses(WidgetTester tester) async {
+      await tester.tap(find.text('课程'));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('prompts for an account when none exist', (tester) async {
+      await _pumpApp(tester);
+      await openCourses(tester);
+
+      expect(find.text('请先在「账号」页添加校园账号'), findsOneWidget);
+    });
+
+    testWidgets('shows the empty target state once an account exists', (
+      tester,
+    ) async {
+      final db = AppDatabase(NativeDatabase.memory());
+      await _seedAccount(db);
+      await _pumpApp(tester, database: db);
+      await openCourses(tester);
+
+      expect(find.text('还没有配置抢课目标，点击右下角添加'), findsOneWidget);
+    });
+
+    testWidgets('renders stored targets in priority order', (tester) async {
+      final db = AppDatabase(NativeDatabase.memory());
+      await _seedAccount(db);
+      // Inserted highest-priority-last to prove the page orders by priority
+      // rather than by insertion.
+      for (final (id, name, priority) in [
+        ('t2', '第二志愿', 1),
+        ('t1', '第一志愿', 0),
+      ]) {
+        await db.courseTargetDao.insertTarget(
+          CourseTargetsCompanion.insert(
+            id: id,
+            accountId: 'a1',
+            xkid: 'xk-1',
+            xkms: '1',
+            kmh: 'km-$id',
+            batchName: '春季选课',
+            courseName: name,
+            priority: Value(priority),
+            snapshotAt: _seedNow,
+          ),
+        );
+      }
+
+      await _pumpApp(tester, database: db);
+      await openCourses(tester);
+
+      expect(find.text('还没有配置抢课目标，点击右下角添加'), findsNothing);
+      expect(find.text('春季选课 · 抢选'), findsNWidgets(2));
+
+      final cards = tester
+          .widgetList<TargetListCard>(find.byType(TargetListCard))
+          .toList();
+      expect(cards.map((c) => c.courseName), ['第一志愿', '第二志愿']);
     });
   });
 }
