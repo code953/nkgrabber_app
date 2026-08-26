@@ -49,7 +49,8 @@ lib/
                     #   GrabberController, GrabberPage
     settings/       # SettingsPage
   infrastructure/
-    campus/         # CampusAdapter + impl, RSA, GBK, models, clock sync
+    campus/         # CampusAdapter + impl, RSA, encoding, response envelope,
+                    #   portal SSO, models, clock sync
     database/       # AppDatabase (Drift), 4 tables, 4 DAOs, connection
     providers.dart  # DB/storage/DAO providers + AppSettingsNotifier
   l10n/             # app_zh.arb (primary), app_en.arb (placeholder)
@@ -79,13 +80,28 @@ Every page reads its data through providers; there are no stubs left.
 
 ## Key Technical Constraints
 
-- **One HTTP target only**: the campus system (`http://campus.nks.edu.cn`, GBK, form POST). There is no business backend — do not add one.
+- **One HTTP target only**: the campus system (`http://campus.nks.edu.cn`, form POST). There is no business backend — do not add one.
+- **The campus wire format is not guessable — it was measured.** Every field name, body format, and envelope rule in `lib/infrastructure/campus/` came from probing the live deployment, and several are counter-intuitive:
+  - `status` in the response envelope is an **HTTP-like int** (200), not a boolean. `status == true` is never satisfied.
+  - The payload is under `result`, never under `data`. Reading `data` yields a silent empty list, not an error.
+  - A **missing** `result` key means "response we don't understand"; `result: null` means "legitimately empty". Do not conflate them.
+  - The portal's `.jsmeb` endpoints take a **JSON** body under a form-encoded Content-Type. A genuinely form-encoded `params=[...]` is rejected with 参数格式非法.
+  - The same field is typed inconsistently across endpoints (`zdxk` is the string `"2"`, `xkms` is the number `0`) — always go through `campusInt` / `campusString`.
+  - Reaching the course-selection app needs the full `ssolx=5` SSO handshake (`token` + `apiUrl` + `userid`); a bare `GET /njs_3033/xsxk2` answers 403.
+
+  All of this is pinned by verbatim fixtures in `test/campus_parsing_test.dart`. Before changing a parser, read the fixture — if a change contradicts one, the change is wrong unless the school actually changed. `campus_envelope.dart` is the single unwrap layer; do not re-implement envelope checks at a call site.
+- **The submit path is the one link never verified against the live server.** `saveStudentXkJs`'s `kmhDtoList` shape was derived from the school's own page script, not from a response: the only batch on this deployment closed 2026-04-18, and submitting would have mutated a real student's registration. The `UNVERIFIED` comment at that call site stays until someone confirms it during an open batch.
 - **Per-account isolation**: each campus account gets its own `Dio` + in-memory `CookieJar`. Cookies never touch disk. `AccountsNotifier` owns these clients and disposes them on account removal, failed login, and its own disposal.
 - **Secure storage only**: passwords and cookies live in platform secure storage (Android Keystore / iOS Keychain / Windows DPAPI / Linux Secret Service). Drift only stores reference keys.
-- **Log sanitization**: all log output passes through `LogSanitizer` before emission. Passwords, cookies, Bearer tokens, activation codes, `deviceToken`, `licenseCode` are replaced with `[REDACTED]`. The last three patterns are kept even though the online business is gone — removing a redaction rule is never an improvement. Student names, student numbers, and course names are never logged either: log the opaque UUID instead.
+- **Log sanitization**: all log output passes through `LogSanitizer` before emission. Passwords, cookies, Bearer tokens, activation codes, `deviceToken`, `licenseCode` are replaced with `[REDACTED]`. The last three patterns are kept even though the online business is gone — removing a redaction rule is never an improvement. Student names, student numbers, and course names are never logged either: log the opaque UUID instead. `mycenter_token` is a live session credential and must never be logged.
 - **Grabber state machine**: `idle → preparing → running → success/paused/stopped/interrupted/captchaRequired/failed`. No auto-recovery after `interrupted`. 30-minute hard timeout.
 - **effectiveIntervalMs = max(userIntervalMs, settings.minRequestIntervalMs)** — jitter is upward only, never below the floor. Both values come from `app_settings`.
-- **xkms validation**: unknown values (`!= "1"|"2"|"3"`) → mark target `failed`, never submit with a default. The batch picker also refuses to select such a batch at all.
+- **xkms classification** lives in `Xkms` (`xkms_enum.dart`), which distinguishes three cases, because two of them need different words for the user:
+  - `"1"|"2"|"3"` → submittable (抢选 / 正选 / 补退选).
+  - `"0"` → the batch's selection window has **closed**. This is a real documented state, not a parsing failure. Telling the user to wait for a client upgrade here sends them chasing a bug that does not exist.
+  - anything else → genuinely unknown; mark the target `failed` and ask for an upgrade.
+
+  Never submit with a defaulted `xkms`. The batch picker refuses to select any non-submittable batch.
 - **Localization delegates are mandatory**: `MaterialApp.router` forces `locale: Locale('zh')`, and the implicit `DefaultMaterialLocalizations` supports `en` only. `localizationsDelegates: S.localizationsDelegates` (which bundles the three `Global*` delegates) must stay wired, or every Material widget that calls `MaterialLocalizations.of()` — `NavigationRail`, `NavigationBar`, `Scaffold` drawers — throws at build time. Keep `supportedLocales: S.supportedLocales` so it tracks the `.arb` files.
 
 ## Database Schema (Drift, schemaVersion=3)
@@ -122,7 +138,9 @@ import '../../core/errors/app_exception.dart';
 
 ## Testing
 
-Tests live in `test/widget_test.dart`. The suite covers:
+Tests live in `test/widget_test.dart` and `test/campus_parsing_test.dart`.
+
+`widget_test.dart` covers:
 - `AppException` hierarchy
 - `LogSanitizer` (all redaction patterns)
 - `AppConstants` (campus URL, timeouts, default-limit consistency)
@@ -132,6 +150,20 @@ Tests live in `test/widget_test.dart`. The suite covers:
 - `RetryClassifier` (decision cases)
 - `ClockSyncStatus` (`campusNow` offset in both directions)
 - Interval calculation (`max(userIntervalMs, minRequestIntervalMs)`)
+
+`campus_parsing_test.dart` (33 cases) covers the response-parsing layer:
+`RsaEncryptor.extractFromHtml`, the `campus_envelope` unwrappers,
+`campusInt`/`campusString`, portal SSO (`parsePortalSession`,
+`findCourseSelectionApp`, `buildSsoUrl`), `Xkms` classification, and the submit
+payload shape.
+
+**Every fixture in that file is a verbatim excerpt of a real response** captured
+from the live deployment, with sensitive values (RSA modulus, session ids,
+student name and number) replaced by structurally-identical placeholders. Field
+names, nesting, and value *types* are preserved exactly, because those are what
+the parsers depend on — hand-written approximations are what let the original
+defects through. Do not "tidy" a fixture into something that looks more regular
+than the server actually is.
 
 Widget tests (14 cases) pump the real `NKGrabberApp` with `appDatabaseProvider`
 overridden to `NativeDatabase.memory()` and `secureStorageProvider` to a fake —
@@ -148,9 +180,9 @@ which does not resolve in a test, so the page would spin forever and
 - `SettingsPage`: renders the stored row, persists a slider release, warns
   when the user interval is below the floor
 
-Run with `flutter test`. All 56 tests must pass before committing.
+Run with `flutter test`. All 90 tests must pass before committing.
 
-New widget tests must be checked negatively — break the wiring under test and
+New tests must be checked negatively — break the wiring under test and
 confirm the case goes red. A green test proves nothing on its own; several of
 these were written after a page was already wired, and only the negative check
 distinguishes "asserts the behaviour" from "asserts a coincidence".

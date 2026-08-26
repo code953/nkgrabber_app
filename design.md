@@ -112,8 +112,8 @@ lib/
 | `deviceToken` | 激活后服务端签发的设备授权令牌，保存于安全存储 |
 | 档次 Plan | 包含账号上限、最小请求间隔、最大并发账号数和授权有效天数 |
 | `xkid` | 学校选课批次 ID |
-| `xbkid` | 学校限选块/展示分组 ID，不得代替 `kmh` 提交 |
-| `kmh` | 真正提交选课时使用的课目号 |
+| `xbkid` | 学校限选块 ID，既用于展示也用于提交（见 §7.1） |
+| `kmh` | 提交选课时使用的课目号；本部署实测等于 `xbkid` |
 
 固定授权规则：
 
@@ -294,8 +294,8 @@ CourseTarget
 - accountId    TEXT    NOT NULL FK Account.id ON DELETE CASCADE
 - xkid         TEXT    NOT NULL
 - xkms         TEXT    NOT NULL              # 批次模式，提交时原样带回
-- kmh          TEXT    NOT NULL              # 真正的课目号
-- xbkid        TEXT    NULL                  # 展示分组 ID，可能与 kmh 不同
+- kmh          TEXT    NOT NULL              # 提交用课目号（本部署实测 == xbkid）
+- xbkid        TEXT    NULL                  # 限选块 ID
 - batchName    TEXT    NOT NULL              # 快照
 - courseName   TEXT    NOT NULL              # 快照
 - priority     INTEGER NOT NULL DEFAULT 0    # 数值越小越优先
@@ -382,25 +382,42 @@ abstract interface class CampusAdapter {
 
 ### 7.1 上游接口映射
 
+下表已按 campus.nks.edu.cn 实测校正。**实测结论优先于本节的历史描述** —— 凡与实际响应冲突之处，以代码与 `test/campus_parsing_test.dart` 中的逐字 fixture 为准。
+
 | 能力 | 接口 | 关键数据 |
 | --- | --- | --- |
-| 获取登录参数 | `GET /zhxy/welcome` | HTML 中的 `pubKey`、`kid` |
-| 密码登录 | `POST /zhxy/rrtlogin/loginWithYzm.jsmeb` | `params=[账号,RSA密码,验证码,kid]` |
-| 换取选课会话 | 门户 SSO 跳转至 `/njs_3033/xsxk2` | 最终取得 `gdpk` |
-| 批次列表 | `POST /njs_3033/xsxk/getStudentXkList` | `xkid`, `xkms`, `zdxk`, `kssj`, `jssj` |
-| 课程列表 | `POST /njs_3033/xsxk_Xbk/getXbkByXkid` | `kmh`, `xbkid`, 课程信息 |
+| 获取登录参数 | `GET /zhxy/welcome` | HTML 隐藏 input 中的 `pubKey`、`kid`（**不是** JS 变量） |
+| 密码登录 | `POST /zhxy/rrtlogin/loginWithYzm.jsmeb` | 请求体是 **JSON** `{"params":[账号,RSA密码,验证码,kid]}`，Content-Type 仍写 form-encoded |
+| 门户会话 | `GET /zhxy` | HTML 中的 `mycenter_token`、`mycenter_userid` |
+| 应用注册表 | `POST /zhxy/app/getAllAppsByUser.jsmeb` | `appurl`（含各校独立 `ssoappid`）、`apiurl`、`ssolx` |
+| 换取选课会话 | 门户 SSO，`ssolx=5` | `{origin}{appurl}[&\|?]token=…&apiUrl=…&userid=…` → `gdpk` |
+| 批次列表 | `POST /njs_3033/xsxk/getStudentXkList` | `xkid`, `xkms`, `zdxk`, `mc`, `kssj`, `jssj`, `xsid` |
+| 课程列表 | `POST /njs_3033/xsxk_Xbk/getXbkByXkid` | `result.xbkList[]`：`xbkid`, `xbkmc`, `jsxm`, `rsyq`, `yxrs`, `syme`, `xbkxf` |
 | 批次/名额 | `POST /njs_3033/xsxk_Xbk/getXbkXkqkAndXsXkqk` | `setzrs`, `setyxzrs`, `setwxzrs` |
-| 已选记录 | `POST /njs_3033/xsxk_Xbk/getStudentXkJlList` | 用于启动前幂等判断 |
-| 正式提交 | `POST /njs_3033/xsxk_Xbk/saveStudentXkJs` | `xkid`, `xkms`, `sftj=1`, `kms`, `kmhDtoList` |
+| 已选记录 | `POST /njs_3033/xsxk_Xbk/getStudentXkJlList` | `kmh`, `kmmc`, `xm`；用于启动前幂等判断 |
+| 正式提交 | `POST /njs_3033/xsxk_Xbk/saveStudentXkJs` | `xkid`, `xkms`, `sftj=1`, `kms`, `kmhDtoList`（JSON 数组 `[{"kmh":"…"}]`） |
 | 撤回 | `POST /njs_3033/xsxk_Xbk/xschXbkxkCz` | `xkid` |
+
+关于 SSO：登录门户**不足以**进入选课应用，裸 `GET /njs_3033/xsxk2` 返回 403。该应用注册为 `ssolx=5`，必须把 `token`、`apiUrl`、`userid` 三个参数穿过跳转，选课主机才会下发 `gdpk`。`appurl` 携带各部署独立的 `ssoappid`，只能运行时读注册表。遇到其他 `ssolx` 取值时抛出可读错误，不猜 URL。
+
+关于课程列表：上游行**不携带 `kmh`**，只有 `xbkid`；学校自己的页面也是拿 `xbkid` 提交。已实测确认一条已选记录的 `kmh` 与 `xbkList` 中某行的 `xbkid` 完全一致，故本客户端以 `xbkid` 作为提交 ID。
+
+**提交路径未经实测**：本部署唯一批次已于 2026-04-18 结束，实际提交会改动真实学生的选课记录。`kmhDtoList` 的形状取自页面脚本 `saveStudentXkJs({…, kmhDtoList: JSON.stringify([{kmh: …}])})`，代码中已标注 UNVERIFIED。
 
 ### 7.2 编解码和判定
 
-- 上游为明文 HTTP，JSON 响应可能是 GBK；必须先按原始字节进行 GBK 解码，再解析 JSON。
-- POST 表单使用 `application/x-www-form-urlencoded`。
+- 上游为明文 HTTP。**本部署实测为 UTF-8**；`decodeGbk` 先尝试严格 UTF-8 解码，失败才回落 GB18030，因此两种编码都能处理。
+- 请求体：选课侧接口用 `application/x-www-form-urlencoded`；门户侧 `.jsmeb` 接口的 Content-Type 也写 form-encoded，但**实际内容是 JSON**（学校自己的脚本即如此，真正 form-encoded 的 `params=[...]` 会被拒为「参数格式非法」）。
 - 每个账号使用独立 Cookie Jar，禁止跨账号复用。
 - `kms` 必须等于 `kmhDtoList.length`，且不超过批次 `zdxk`。
-- HTTP 200 不代表成功，必须同时解析 `status`、`result.code`、`result.msg`。
+- HTTP 200 不代表成功。响应统一为 `{"result": …, "status": 200}` 或 `{"error":{"code","message"}}`：
+    - `status` 是 **HTTP 风格的整数**（200），不是布尔值 —— `status == true` 永远不成立。
+    - 负载在 `result` 下，**从来不在 `data` 下**。
+    - 缺少 `result` 字段是「响应看不懂」；`result` 为 `null` 是「确实没有数据」。二者不可混为一谈。
+    - `error.code == -32604`、`status` 401/601 → 会话失效；`status` 602 → 服务器繁忙（取自学校 `ajaxRequest` 包装器的处理）。
+    - 命令类接口另有 `result.code`，`"0"` 为成功，其余配 `result.msg`。
+    - 同一字段在不同接口类型不一致（`zdxk` 是字符串 `"2"`，`xkms` 是数字 `0`），必须经 `campusInt`/`campusString` 归一化。
+- 解包逻辑集中在 `lib/infrastructure/campus/campus_envelope.dart`，不在各调用点重复。
 - 所有路径、字段解析和错误映射集中在适配器，不允许 UI 引用学校接口字符串。
 
 ### 7.3 时间同步策略
@@ -420,12 +437,18 @@ abstract interface class CampusAdapter {
 
 根据 D-11 最终结论：`xkms` 采用**固定枚举**方案，`zdxk` 采用**每批次实时读取**方案。
 
-- **`xkms`（选课模式）** — 客户端把取值固化为下列枚举，提交时原样带回 `saveStudentXkJs`；枚举定义集中在 `lib/infrastructure/campus/xkms_enum.dart`：
+- **`xkms`（选课模式）** — 客户端把取值固化为下列枚举，提交时原样带回 `saveStudentXkJs`；分类逻辑集中在 `lib/infrastructure/campus/xkms_enum.dart`：
     - `"1"` = 抢选
     - `"2"` = 正选
     - `"3"` = 补退选
+    - `"0"` = **选课已结束**（实测：本部署唯一批次即报 `xkms=0`）
     
-    遇到枚举以外的取值时，调度器把该目标直接置 `failed`，UI 提示"未识别的选课模式，请等待客户端升级"，**不做保守默认提交**以避免向学校发送意义不确定的请求。学校若新增批次场景（如"预选"），必须发布带新枚举项的新版客户端。
+    `"0"` 是学校的一个真实终态，**不是解析失败**。把它当作「无法识别」并提示等待客户端升级，会让用户去追一个根本不存在的客户端 bug —— 批次只是结束了。因此不可提交的原因分两类：
+    
+    - **已结束**（`"0"`）→ 提示「该批次选课已结束」，批次选择器直接禁用该批次。
+    - **确实未知**（枚举外的其他取值）→ 目标置 `failed`，提示「无法识别的选课模式，请等待客户端升级」。
+    
+    两种情况都**不做保守默认提交**，以避免向学校发送意义不确定的请求。学校若新增批次场景（如"预选"），必须发布带新枚举项的新版客户端。
     
 - **`zdxk`（每次最多提交条数）** — 每次进入 `running` 前必须重新调用 `getStudentXkList` 读取最新值，**不缓存跨批次**。调度器在拼装 `kmhDtoList` 时严格校验 `kms == kmhDtoList.length ≤ zdxk`；若目标总数超过当前 `zdxk`，自动拆分成多轮提交（见 §9.5）。
 - **不引入远程覆盖目录**：不新增 `AppSettings.campusOverrideUrl`，不实现 `assets/campus/xkms-catalog.json` 加载或校验逻辑，相关代码路径一律不落地。
@@ -545,7 +568,7 @@ idle → preparing → running → success
 - Domain：权益、账号超限、间隔计算、状态机、重试分类单元测试。
 - Drift：迁移、DAO、级联删除和敏感字段缺失测试。
 - Backend API：固定请求/响应契约和错误码测试。
-- CampusAdapter：使用脱敏 fixture 测试 GBK、HTML 提取、Cookie、成功/失败响应。
+- CampusAdapter：使用脱敏 fixture 测试编码、HTML 提取、Cookie、响应信封、SSO URL 拼装、`xkms` 分类、成功/失败响应。fixture 必须是**真实响应的逐字摘录**（敏感值替换为结构相同的占位符）—— 手写的近似 fixture 正是当初让这批缺陷溜过去的原因。见 `test/campus_parsing_test.dart`。
 - 调度器：Fake Clock 测试间隔、停止、并发、异常退出、授权失效。
 - 五端至少完成启动、激活、更新、账号隔离和安全存储冒烟测试。
 
@@ -602,7 +625,7 @@ idle → preparing → running → success
 | D-08 | 自动检查更新频率 | 启动时自动检查一次 + 设置页手动按钮；**不定时轮询** | §11.3 |
 | D-09 | 主题 | 仅内置"简约 / 二次元 / 跟随系统"，**不支持自定义主题包** | §10.1、§5.1 `AppSettings.theme` |
 | D-10 | 崩溃日志远程上报 | **默认开启（opt-out）**，设置页可关闭；上报内容严格脱敏 | §2.3、§11.2；服务端新增 `POST /api/v1/telemetry/crash` |
-| D-11 | 学校 `xkms`、`zdxk` 字段是否可能随批次变化 | `xkms` **固定枚举**（`1`抢选 / `2`正选 / `3`补退选，未知取值失败并提示升级）；`zdxk` **每批次实时读取**（每次进入 running 前重新调用 `getStudentXkList`，不缓存） | §7.5；未来学校新增批次模式（如"预选"）必须发新版客户端 |
+| D-11 | 学校 `xkms`、`zdxk` 字段是否可能随批次变化 | `xkms` **固定枚举**（`1`抢选 / `2`正选 / `3`补退选 / `0`选课已结束；枚举外取值失败并提示升级）；`zdxk` **每批次实时读取**（每次进入 running 前重新调用 `getStudentXkList`，不缓存） | §7.5；`0` 为 2026-08 实测补入的已知终态，与"未知取值"分开处理；未来学校新增批次模式（如"预选"）必须发新版客户端 |
 | D-12 | 账号/目标配置导入导出 | 不支持（与"账号密码不出设备"策略一致） | §8、§14 |
 | D-13 | 抢课任务最大连续运行时长 | **30 分钟**；到时自动停止并要求用户重新确认 | §9.2 |
 | D-14 | 服务端接口签名 | 仅 Bearer Token，**不追加 HMAC** | §4.1；服务端 §4.1 无变化 |
@@ -611,6 +634,7 @@ idle → preparing → running → success
 
 | 日期 | 版本 | 作者 | 变更摘要 |
 | --- | --- | --- | --- |
+| 2026-08-26 | v1.4 | Claude | 按 campus.nks.edu.cn 实测校正学校接口章节：§7.1 补入门户会话/应用注册表/`ssolx=5` SSO 三步，登录体改为 JSON，课程列表字段按实际响应列出，`kmh` 由 `xbkid` 提供（§3 术语与 §5.1 `CourseTarget` 同步）；§7.2 改写为完整的响应信封契约（`status` 是整数、负载在 `result`、缺 `result` 与 `result: null` 的区别、401/601/602 映射、字段类型不一致），编码更正为「实测 UTF-8，`decodeGbk` 先试 UTF-8 再回落」；§7.5 与 D-11 补入 `xkms="0"` = 选课已结束这一已知终态，与"未知取值"分开处理；§12 要求 fixture 为真实响应逐字摘录。提交路径因唯一批次已于 2026-04-18 结束而未实测，已在 §7.1 与代码中标注 UNVERIFIED |
 | 2026-07-23 | v1.3 | Notion AI | D-11 最终定稿：`xkms` 采用固定枚举（`1/2/3` = 抢选/正选/补退选）、`zdxk` 每批次实时读取；§7.5 由"兼容层（视为可变）"改写为"字段处理（xkms 稳定 / zdxk 可变）"，删除远程覆盖目录与 `AppSettings.campusOverrideUrl` 相关设计；§15 合并为单一"定稿结论"表（D-11 行插入至 D-10 与 D-12 之间）并移除 §15.2；服务端无变更 |
 | 2026-07-23 | v1.2 | Notion AI | 根据产品负责人回答固化 §15 中 D-01–D-10、D-12–D-14 为定稿（D-11 保留为待确认）；同步更新 §2.3 崩溃上报默认策略、§7.3 移除预热、§7.5 新增学校字段兼容层（建议方案）、§9.2 最大运行时长 30 min、§9.3 提交步骤、§10.1 设置项与首次运行同意页、§11 各平台产物与 §11.2/§11.3 崩溃与更新策略；服务端同步新增崩溃上报接口、激活码格式与不支持强制解绑 |
 | 2026-07-22 | v1.1 | Notion AI | 新增阅读顺序、构建矩阵、横切关注点、时间同步、启动流程、可观测指标、目标优先级/观测诊断、待决策项与修订记录；细化数据模型字段类型与索引；补充目标用户与非目标；补齐幂等/时钟偏差要求 |
