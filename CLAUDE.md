@@ -105,20 +105,21 @@ Every page reads its data through providers; there are no stubs left.
   - anything else → genuinely unknown; mark the target `failed` and ask for an upgrade.
 
   Never submit with a defaulted `xkms`. The batch picker refuses to select any non-submittable batch.
+- **Debug mode (`app_settings.debugModeEnabled`, default off) lifts the xkms gate, not the xkms value.** With it on, the batch picker lets a closed/unknown batch be selected and `AccountWorker` submits instead of reporting `blockedReason` — but the request still carries the **server's own** `xkms` verbatim. Substituting a submittable code would destroy the only thing the mode exists to observe: what the campus system actually answers for a closed batch. `GrabberEngine` reads the flag at construction like the other limits, so the settings toggle is locked while a task runs, and `GrabberPage` shows a persistent banner while it is on — without that, a user who forgot the switch reads the server's correct refusal as a client bug.
 - **Localization delegates are mandatory**: `MaterialApp.router` forces `locale: Locale('zh')`, and the implicit `DefaultMaterialLocalizations` supports `en` only. `localizationsDelegates: S.localizationsDelegates` (which bundles the three `Global*` delegates) must stay wired, or every Material widget that calls `MaterialLocalizations.of()` — `NavigationRail`, `NavigationBar`, `Scaffold` drawers — throws at build time. Keep `supportedLocales: S.supportedLocales` so it tracks the `.arb` files.
 
-## Database Schema (Drift, schemaVersion=3)
+## Database Schema (Drift, schemaVersion=4)
 
 | Table | PK | Notes |
 |---|---|---|
 | `accounts` | UUID TEXT | `cascade` FK owner of CourseTarget and GrabTask |
 | `course_targets` | UUID TEXT | FK → accounts(id) ON DELETE CASCADE |
 | `grab_tasks` | UUID TEXT | FK → accounts(id) ON DELETE CASCADE |
-| `app_settings` | id=1 (singleton) | created with defaults on first read; holds `userIntervalMs`, `minRequestIntervalMs`, `maxAccounts`, `maxConcurrentAccounts` |
+| `app_settings` | id=1 (singleton) | created with defaults on first read; holds `userIntervalMs`, `minRequestIntervalMs`, `maxAccounts`, `maxConcurrentAccounts`, `debugModeEnabled` |
 
 Indexes: `idx_course_target_account_xkid`, `idx_grab_task_account_status`.
 
-Migration history: v1→v2 dropped `license_snapshots`; v2→v3 added the three limit columns and rebuilt `app_settings` to drop `update_channel` / `crash_reporting_enabled`.
+Migration history: v1→v2 dropped `license_snapshots`; v2→v3 added the three limit columns and rebuilt `app_settings` to drop `update_channel` / `crash_reporting_enabled`; v3→v4 added `debug_mode_enabled` (default false, so an upgrade is behaviour-preserving).
 
 After any schema change, bump `schemaVersion` and add a migration case in `AppDatabase.migration.onUpgrade`.
 
@@ -172,7 +173,7 @@ the parsers depend on — hand-written approximations are what let the original
 defects through. Do not "tidy" a fixture into something that looks more regular
 than the server actually is.
 
-Widget tests (14 cases) pump the real `NKGrabberApp` with `appDatabaseProvider`
+Widget tests (15 cases) pump the real `NKGrabberApp` with `appDatabaseProvider`
 overridden to `NativeDatabase.memory()` and `secureStorageProvider` to a fake —
 the production providers open a file under the application support directory,
 which does not resolve in a test, so the page would spin forever and
@@ -186,8 +187,13 @@ which does not resolve in a test, so the page would spin forever and
   account but no targets, and with only disabled targets; enabled otherwise
 - `SettingsPage`: renders the stored row, persists a slider release, warns
   when the user interval is below the floor
+- Debug mode: `AccountWorker` refuses a closed batch with the flag off and
+  submits it — carrying the server's own `xkms`, including an unrecognised
+  one — with it on; the settings toggle persists and drives the `GrabberPage`
+  banner. Driven through a recording `CampusAdapter` rather than by asserting
+  on `Xkms.blockedReason`, which would pass with the bypass reverted.
 
-Run with `flutter test`. All 94 tests must pass before committing.
+Run with `flutter test`. All 98 tests must pass before committing.
 
 New tests must be checked negatively — break the wiring under test and
 confirm the case goes red. A green test proves nothing on its own; several of

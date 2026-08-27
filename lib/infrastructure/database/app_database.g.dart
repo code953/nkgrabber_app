@@ -2153,6 +2153,21 @@ class $AppSettingsTable extends AppSettings
     requiredDuringInsert: false,
     defaultValue: const Constant('zh_CN'),
   );
+  static const VerificationMeta _debugModeEnabledMeta = const VerificationMeta(
+    'debugModeEnabled',
+  );
+  @override
+  late final GeneratedColumn<bool> debugModeEnabled = GeneratedColumn<bool>(
+    'debug_mode_enabled',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("debug_mode_enabled" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -2163,6 +2178,7 @@ class $AppSettingsTable extends AppSettings
     maxConcurrentAccounts,
     logLevel,
     locale,
+    debugModeEnabled,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -2233,6 +2249,15 @@ class $AppSettingsTable extends AppSettings
         locale.isAcceptableOrUnknown(data['locale']!, _localeMeta),
       );
     }
+    if (data.containsKey('debug_mode_enabled')) {
+      context.handle(
+        _debugModeEnabledMeta,
+        debugModeEnabled.isAcceptableOrUnknown(
+          data['debug_mode_enabled']!,
+          _debugModeEnabledMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -2274,6 +2299,10 @@ class $AppSettingsTable extends AppSettings
         DriftSqlType.string,
         data['${effectivePrefix}locale'],
       )!,
+      debugModeEnabled: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}debug_mode_enabled'],
+      )!,
     );
   }
 
@@ -2312,6 +2341,16 @@ class AppSettingsEntry extends DataClass
 
   /// UI locale code.
   final String locale;
+
+  /// Debug mode: submit against batches the client would otherwise refuse.
+  ///
+  /// Normally a batch whose `xkms` is `"0"` (closed) or unrecognised is not
+  /// submittable, and both the batch picker and [AccountWorker] refuse it.
+  /// With this on, the refusal is skipped and the request goes out carrying
+  /// the server's own `xkms` verbatim — the point is to observe what the
+  /// campus system actually answers, so faking a submittable mode would
+  /// destroy the only signal the mode exists to collect.
+  final bool debugModeEnabled;
   const AppSettingsEntry({
     required this.id,
     required this.theme,
@@ -2321,6 +2360,7 @@ class AppSettingsEntry extends DataClass
     required this.maxConcurrentAccounts,
     required this.logLevel,
     required this.locale,
+    required this.debugModeEnabled,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -2333,6 +2373,7 @@ class AppSettingsEntry extends DataClass
     map['max_concurrent_accounts'] = Variable<int>(maxConcurrentAccounts);
     map['log_level'] = Variable<String>(logLevel);
     map['locale'] = Variable<String>(locale);
+    map['debug_mode_enabled'] = Variable<bool>(debugModeEnabled);
     return map;
   }
 
@@ -2346,6 +2387,7 @@ class AppSettingsEntry extends DataClass
       maxConcurrentAccounts: Value(maxConcurrentAccounts),
       logLevel: Value(logLevel),
       locale: Value(locale),
+      debugModeEnabled: Value(debugModeEnabled),
     );
   }
 
@@ -2367,6 +2409,7 @@ class AppSettingsEntry extends DataClass
       ),
       logLevel: serializer.fromJson<String>(json['logLevel']),
       locale: serializer.fromJson<String>(json['locale']),
+      debugModeEnabled: serializer.fromJson<bool>(json['debugModeEnabled']),
     );
   }
   @override
@@ -2381,6 +2424,7 @@ class AppSettingsEntry extends DataClass
       'maxConcurrentAccounts': serializer.toJson<int>(maxConcurrentAccounts),
       'logLevel': serializer.toJson<String>(logLevel),
       'locale': serializer.toJson<String>(locale),
+      'debugModeEnabled': serializer.toJson<bool>(debugModeEnabled),
     };
   }
 
@@ -2393,6 +2437,7 @@ class AppSettingsEntry extends DataClass
     int? maxConcurrentAccounts,
     String? logLevel,
     String? locale,
+    bool? debugModeEnabled,
   }) => AppSettingsEntry(
     id: id ?? this.id,
     theme: theme ?? this.theme,
@@ -2402,6 +2447,7 @@ class AppSettingsEntry extends DataClass
     maxConcurrentAccounts: maxConcurrentAccounts ?? this.maxConcurrentAccounts,
     logLevel: logLevel ?? this.logLevel,
     locale: locale ?? this.locale,
+    debugModeEnabled: debugModeEnabled ?? this.debugModeEnabled,
   );
   AppSettingsEntry copyWithCompanion(AppSettingsCompanion data) {
     return AppSettingsEntry(
@@ -2421,6 +2467,9 @@ class AppSettingsEntry extends DataClass
           : this.maxConcurrentAccounts,
       logLevel: data.logLevel.present ? data.logLevel.value : this.logLevel,
       locale: data.locale.present ? data.locale.value : this.locale,
+      debugModeEnabled: data.debugModeEnabled.present
+          ? data.debugModeEnabled.value
+          : this.debugModeEnabled,
     );
   }
 
@@ -2434,7 +2483,8 @@ class AppSettingsEntry extends DataClass
           ..write('maxAccounts: $maxAccounts, ')
           ..write('maxConcurrentAccounts: $maxConcurrentAccounts, ')
           ..write('logLevel: $logLevel, ')
-          ..write('locale: $locale')
+          ..write('locale: $locale, ')
+          ..write('debugModeEnabled: $debugModeEnabled')
           ..write(')'))
         .toString();
   }
@@ -2449,6 +2499,7 @@ class AppSettingsEntry extends DataClass
     maxConcurrentAccounts,
     logLevel,
     locale,
+    debugModeEnabled,
   );
   @override
   bool operator ==(Object other) =>
@@ -2461,7 +2512,8 @@ class AppSettingsEntry extends DataClass
           other.maxAccounts == this.maxAccounts &&
           other.maxConcurrentAccounts == this.maxConcurrentAccounts &&
           other.logLevel == this.logLevel &&
-          other.locale == this.locale);
+          other.locale == this.locale &&
+          other.debugModeEnabled == this.debugModeEnabled);
 }
 
 class AppSettingsCompanion extends UpdateCompanion<AppSettingsEntry> {
@@ -2473,6 +2525,7 @@ class AppSettingsCompanion extends UpdateCompanion<AppSettingsEntry> {
   final Value<int> maxConcurrentAccounts;
   final Value<String> logLevel;
   final Value<String> locale;
+  final Value<bool> debugModeEnabled;
   const AppSettingsCompanion({
     this.id = const Value.absent(),
     this.theme = const Value.absent(),
@@ -2482,6 +2535,7 @@ class AppSettingsCompanion extends UpdateCompanion<AppSettingsEntry> {
     this.maxConcurrentAccounts = const Value.absent(),
     this.logLevel = const Value.absent(),
     this.locale = const Value.absent(),
+    this.debugModeEnabled = const Value.absent(),
   });
   AppSettingsCompanion.insert({
     this.id = const Value.absent(),
@@ -2492,6 +2546,7 @@ class AppSettingsCompanion extends UpdateCompanion<AppSettingsEntry> {
     this.maxConcurrentAccounts = const Value.absent(),
     this.logLevel = const Value.absent(),
     this.locale = const Value.absent(),
+    this.debugModeEnabled = const Value.absent(),
   });
   static Insertable<AppSettingsEntry> custom({
     Expression<int>? id,
@@ -2502,6 +2557,7 @@ class AppSettingsCompanion extends UpdateCompanion<AppSettingsEntry> {
     Expression<int>? maxConcurrentAccounts,
     Expression<String>? logLevel,
     Expression<String>? locale,
+    Expression<bool>? debugModeEnabled,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -2514,6 +2570,7 @@ class AppSettingsCompanion extends UpdateCompanion<AppSettingsEntry> {
         'max_concurrent_accounts': maxConcurrentAccounts,
       if (logLevel != null) 'log_level': logLevel,
       if (locale != null) 'locale': locale,
+      if (debugModeEnabled != null) 'debug_mode_enabled': debugModeEnabled,
     });
   }
 
@@ -2526,6 +2583,7 @@ class AppSettingsCompanion extends UpdateCompanion<AppSettingsEntry> {
     Value<int>? maxConcurrentAccounts,
     Value<String>? logLevel,
     Value<String>? locale,
+    Value<bool>? debugModeEnabled,
   }) {
     return AppSettingsCompanion(
       id: id ?? this.id,
@@ -2537,6 +2595,7 @@ class AppSettingsCompanion extends UpdateCompanion<AppSettingsEntry> {
           maxConcurrentAccounts ?? this.maxConcurrentAccounts,
       logLevel: logLevel ?? this.logLevel,
       locale: locale ?? this.locale,
+      debugModeEnabled: debugModeEnabled ?? this.debugModeEnabled,
     );
   }
 
@@ -2571,6 +2630,9 @@ class AppSettingsCompanion extends UpdateCompanion<AppSettingsEntry> {
     if (locale.present) {
       map['locale'] = Variable<String>(locale.value);
     }
+    if (debugModeEnabled.present) {
+      map['debug_mode_enabled'] = Variable<bool>(debugModeEnabled.value);
+    }
     return map;
   }
 
@@ -2584,7 +2646,8 @@ class AppSettingsCompanion extends UpdateCompanion<AppSettingsEntry> {
           ..write('maxAccounts: $maxAccounts, ')
           ..write('maxConcurrentAccounts: $maxConcurrentAccounts, ')
           ..write('logLevel: $logLevel, ')
-          ..write('locale: $locale')
+          ..write('locale: $locale, ')
+          ..write('debugModeEnabled: $debugModeEnabled')
           ..write(')'))
         .toString();
   }
@@ -4027,6 +4090,7 @@ typedef $$AppSettingsTableCreateCompanionBuilder =
       Value<int> maxConcurrentAccounts,
       Value<String> logLevel,
       Value<String> locale,
+      Value<bool> debugModeEnabled,
     });
 typedef $$AppSettingsTableUpdateCompanionBuilder =
     AppSettingsCompanion Function({
@@ -4038,6 +4102,7 @@ typedef $$AppSettingsTableUpdateCompanionBuilder =
       Value<int> maxConcurrentAccounts,
       Value<String> logLevel,
       Value<String> locale,
+      Value<bool> debugModeEnabled,
     });
 
 class $$AppSettingsTableFilterComposer
@@ -4086,6 +4151,11 @@ class $$AppSettingsTableFilterComposer
 
   ColumnFilters<String> get locale => $composableBuilder(
     column: $table.locale,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get debugModeEnabled => $composableBuilder(
+    column: $table.debugModeEnabled,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -4138,6 +4208,11 @@ class $$AppSettingsTableOrderingComposer
     column: $table.locale,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<bool> get debugModeEnabled => $composableBuilder(
+    column: $table.debugModeEnabled,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$AppSettingsTableAnnotationComposer
@@ -4180,6 +4255,11 @@ class $$AppSettingsTableAnnotationComposer
 
   GeneratedColumn<String> get locale =>
       $composableBuilder(column: $table.locale, builder: (column) => column);
+
+  GeneratedColumn<bool> get debugModeEnabled => $composableBuilder(
+    column: $table.debugModeEnabled,
+    builder: (column) => column,
+  );
 }
 
 class $$AppSettingsTableTableManager
@@ -4221,6 +4301,7 @@ class $$AppSettingsTableTableManager
                 Value<int> maxConcurrentAccounts = const Value.absent(),
                 Value<String> logLevel = const Value.absent(),
                 Value<String> locale = const Value.absent(),
+                Value<bool> debugModeEnabled = const Value.absent(),
               }) => AppSettingsCompanion(
                 id: id,
                 theme: theme,
@@ -4230,6 +4311,7 @@ class $$AppSettingsTableTableManager
                 maxConcurrentAccounts: maxConcurrentAccounts,
                 logLevel: logLevel,
                 locale: locale,
+                debugModeEnabled: debugModeEnabled,
               ),
           createCompanionCallback:
               ({
@@ -4241,6 +4323,7 @@ class $$AppSettingsTableTableManager
                 Value<int> maxConcurrentAccounts = const Value.absent(),
                 Value<String> logLevel = const Value.absent(),
                 Value<String> locale = const Value.absent(),
+                Value<bool> debugModeEnabled = const Value.absent(),
               }) => AppSettingsCompanion.insert(
                 id: id,
                 theme: theme,
@@ -4250,6 +4333,7 @@ class $$AppSettingsTableTableManager
                 maxConcurrentAccounts: maxConcurrentAccounts,
                 logLevel: logLevel,
                 locale: locale,
+                debugModeEnabled: debugModeEnabled,
               ),
           withReferenceMapper: (p0) => p0
               .map((e) => (e.readTable(table), BaseReferences(db, table, e)))

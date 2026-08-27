@@ -25,12 +25,19 @@ class AccountWorker {
     required this.adapter,
     required this.effectiveIntervalMs,
     required this.onTargetResult,
+    this.debugMode = false,
   });
 
   final String accountId;
   final CampusAdapter adapter;
   final int effectiveIntervalMs;
   final TargetResultCallback onTargetResult;
+
+  /// Skip the `xkms` submittability gate and submit anyway.
+  ///
+  /// The `xkms` sent is still the server's own value — see
+  /// `AppSettings.debugModeEnabled`.
+  final bool debugMode;
 
   final _logger = AppLogger('AccountWorker');
   final _random = Random();
@@ -70,11 +77,20 @@ class AccountWorker {
       // simply over.
       final xkms = batchTargets.first.xkms;
       final blockedReason = Xkms.blockedReason(xkms);
-      if (blockedReason != null) {
+      if (blockedReason != null && !debugMode) {
         for (final t in batchTargets) {
           onTargetResult(t.id, success: false, message: blockedReason);
         }
         continue;
+      }
+      if (blockedReason != null) {
+        // Debug mode: proceed, but say so — a submission against a closed
+        // batch is expected to be rejected by the server, and that rejection
+        // is the observation being made.
+        _logger.warn(
+          '[$accountId] Debug mode: submitting to a non-submittable batch '
+          '($blockedReason)',
+        );
       }
 
       // Re-fetch batch info for latest zdxk.

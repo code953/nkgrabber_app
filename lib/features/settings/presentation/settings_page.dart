@@ -128,6 +128,29 @@ class _SettingsBody extends ConsumerWidget {
           title: Text('NKgrabber'),
           subtitle: Text('v1.0.0'),
         ),
+        const Divider(),
+        // Last section on purpose: it is the one setting that changes what a
+        // failure means, and it should not sit above the everyday controls.
+        const _SectionHeader(title: '调试'),
+        SwitchListTile(
+          secondary: const Icon(Icons.science_outlined),
+          title: const Text('调试模式'),
+          subtitle: const Text('忽略批次状态，对已结束或无法识别的批次也发起提交'),
+          value: settings.debugModeEnabled,
+          // The engine reads this at construction, so it is locked mid-run
+          // like the other grabber settings.
+          onChanged: isRunning ? null : notifier.setDebugModeEnabled,
+        ),
+        if (settings.debugModeEnabled)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: Text(
+              '提交仍携带服务器返回的原始 xkms，不做伪造。学校服务器几乎肯定会拒绝已结束批次的提交——那个拒绝本身就是调试要看的结果。',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.error,
+              ),
+            ),
+          ),
       ],
     );
   }

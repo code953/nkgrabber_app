@@ -72,4 +72,13 @@ class SettingsDao extends DatabaseAccessor<AppDatabase>
   Future<void> setMaxConcurrentAccounts(int count) {
     return update_(AppSettingsCompanion(maxConcurrentAccounts: Value(count)));
   }
+
+  /// Toggle debug mode (bypasses the `xkms` submittability gate).
+  ///
+  /// Positional to stay assignable to `SwitchListTile.onChanged`, which wants
+  /// a `ValueChanged<bool>`.
+  // ignore: avoid_positional_boolean_parameters
+  Future<void> setDebugModeEnabled(bool enabled) {
+    return update_(AppSettingsCompanion(debugModeEnabled: Value(enabled)));
+  }
 }

@@ -96,4 +96,11 @@ class AppSettingsNotifier extends AsyncNotifier<AppSettingsEntry> {
   /// Persist the maximum number of accounts grabbing in parallel.
   Future<void> setMaxConcurrentAccounts(int count) =>
       _apply((d) => d.setMaxConcurrentAccounts(count));
+
+  /// Persist the debug-mode flag.
+  ///
+  /// Positional so it can be passed straight to `SwitchListTile.onChanged`.
+  // ignore: avoid_positional_boolean_parameters
+  Future<void> setDebugModeEnabled(bool enabled) =>
+      _apply((d) => d.setDebugModeEnabled(enabled));
 }

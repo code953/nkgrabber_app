@@ -11,9 +11,12 @@ import 'package:nkgrabber/core/security/secure_storage.dart';
 import 'package:nkgrabber/core/utils/constants.dart';
 import 'package:nkgrabber/core/utils/extensions.dart';
 import 'package:nkgrabber/features/courses/presentation/course_config_page.dart';
+import 'package:nkgrabber/features/grabber/application/account_worker.dart';
 import 'package:nkgrabber/features/grabber/application/retry_classifier.dart';
 import 'package:nkgrabber/features/grabber/domain/grabber_state.dart';
+import 'package:nkgrabber/infrastructure/campus/campus_adapter.dart';
 import 'package:nkgrabber/infrastructure/campus/clock_sync.dart';
+import 'package:nkgrabber/infrastructure/campus/models/campus_models.dart';
 import 'package:nkgrabber/infrastructure/campus/xkms_enum.dart';
 import 'package:nkgrabber/infrastructure/database/app_database.dart';
 import 'package:nkgrabber/infrastructure/database/tables/accounts.dart';
@@ -740,4 +743,142 @@ void main() {
       }
     });
   });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Debug mode
+  // ═══════════════════════════════════════════════════════════════════════
+  group('Debug mode', () {
+    /// Drive one worker over a single closed-batch target and report what it
+    /// did. The worker is the real gate — the batch picker is only advisory.
+    Future<({List<SubmitSelection> submits, List<String?> messages})>
+    runWorker({required bool debugMode, String xkms = Xkms.closedCode}) async {
+      final adapter = _RecordingAdapter(xkms: xkms);
+      final messages = <String?>[];
+
+      final worker = AccountWorker(
+        accountId: 'a1',
+        adapter: adapter,
+        effectiveIntervalMs: 1,
+        debugMode: debugMode,
+        onTargetResult: (_, {required bool success, String? message}) =>
+            messages.add(message),
+      );
+
+      final db = AppDatabase(NativeDatabase.memory());
+      addTearDown(db.close);
+      await _seedAccount(db);
+      await _seedTarget(db);
+      final target = (await db.courseTargetDao.getEnabledByAccount(
+        'a1',
+      )).single.copyWith(xkms: xkms);
+
+      await worker.run([target]);
+      return (submits: adapter.submits, messages: messages);
+    }
+
+    test(
+      'off: a closed batch is refused without contacting the server',
+      () async {
+        final r = await runWorker(debugMode: false);
+
+        expect(r.submits, isEmpty);
+        expect(r.messages, ['该批次选课已结束']);
+      },
+    );
+
+    test(
+      "on: a closed batch is submitted with the server's own xkms",
+      () async {
+        final r = await runWorker(debugMode: true);
+
+        // The whole point is to see the real server response, so the value must
+        // not be swapped for a submittable one.
+        expect(r.submits, hasLength(1));
+        expect(r.submits.single.xkms, Xkms.closedCode);
+      },
+    );
+
+    test('on: an unrecognised xkms is also submitted verbatim', () async {
+      final r = await runWorker(debugMode: true, xkms: '99');
+
+      expect(r.submits.single.xkms, '99');
+    });
+
+    testWidgets('the settings toggle persists and drives the grabber banner', (
+      tester,
+    ) async {
+      final db = AppDatabase(NativeDatabase.memory());
+      await _pumpApp(tester, database: db);
+
+      await tester.tap(find.text('设置'));
+      await tester.pumpAndSettle();
+      // Off by default, so no banner yet.
+      await tester.tap(find.text('抢课').first);
+      await tester.pumpAndSettle();
+      expect(find.textContaining('调试模式已开启'), findsNothing);
+
+      await tester.tap(find.text('设置'));
+      await tester.pumpAndSettle();
+      // The toggle is the last section, below the fold on a test viewport.
+      await tester.scrollUntilVisible(find.text('调试模式'), 200);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('调试模式'));
+      await tester.pumpAndSettle();
+
+      expect((await db.settingsDao.get()).debugModeEnabled, isTrue);
+
+      await tester.tap(find.text('抢课').first);
+      await tester.pumpAndSettle();
+      // Surfacing it here is what stops the user reading the server's正常拒绝
+      // as a client bug.
+      expect(find.textContaining('调试模式已开启'), findsOneWidget);
+    });
+  });
+}
+
+/// A [CampusAdapter] that records submissions instead of making requests.
+class _RecordingAdapter implements CampusAdapter {
+  _RecordingAdapter({required this.xkms});
+
+  final String xkms;
+  final submits = <SubmitSelection>[];
+
+  @override
+  Future<List<SelectionBatch>> listBatches() async => [
+    SelectionBatch(
+      xkid: 'xk-1',
+      xkms: xkms,
+      batchName: '春季选课',
+      zdxk: 1,
+      kssj: '2026-01-01 00:00:00',
+      jssj: '2026-01-02 00:00:00',
+    ),
+  ];
+
+  @override
+  Future<List<SelectionRecord>> listSelections(String xkid) async => const [];
+
+  @override
+  Future<SubmitResult> submit(SubmitSelection command) async {
+    submits.add(command);
+    // Mirror what a closed batch really answers: a refusal, not a throw.
+    return const SubmitResult(success: true, message: 'ok');
+  }
+
+  @override
+  int get campusClockOffsetMs => 0;
+
+  @override
+  Future<List<Course>> listCourses(String xkid) => throw UnimplementedError();
+
+  @override
+  Future<LoginResult> loginWithPassword(String a, String p) =>
+      throw UnimplementedError();
+
+  @override
+  Future<StudentProfile> validateCookie(String gdpk) =>
+      throw UnimplementedError();
+
+  @override
+  Future<WithdrawResult> withdraw(String xkid) => throw UnimplementedError();
 }

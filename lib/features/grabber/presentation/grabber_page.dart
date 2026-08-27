@@ -33,6 +33,10 @@ class GrabberPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(grabberProvider);
+    // Debug mode changes what a failure means, so it is surfaced wherever the
+    // user reads results — not left buried in the settings page.
+    final debugMode =
+        ref.watch(appSettingsProvider).valueOrNull?.debugModeEnabled ?? false;
 
     return Scaffold(
       appBar: AppBar(
@@ -46,13 +50,57 @@ class GrabberPage extends ConsumerWidget {
             ),
         ],
       ),
-      body: state.status == GrabberStatus.idle
-          ? const _IdleView()
-          : GrabberProgressView(
-              state: state,
-              onStop: ref.read(grabberProvider.notifier).stop,
-              onPause: ref.read(grabberProvider.notifier).pause,
+      body: Column(
+        children: [
+          if (debugMode) const _DebugModeBanner(),
+          Expanded(
+            child: state.status == GrabberStatus.idle
+                ? const _IdleView()
+                : GrabberProgressView(
+                    state: state,
+                    onStop: ref.read(grabberProvider.notifier).stop,
+                    onPause: ref.read(grabberProvider.notifier).pause,
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Persistent reminder that the `xkms` gate is off.
+///
+/// Without it a user who forgot the switch reads "已结束批次提交失败" as a client
+/// bug, when it is the campus server behaving correctly.
+class _DebugModeBanner extends StatelessWidget {
+  const _DebugModeBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: scheme.errorContainer,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        child: Row(
+          children: [
+            Icon(
+              Icons.science_outlined,
+              size: 20,
+              color: scheme.onErrorContainer,
             ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                '调试模式已开启：忽略批次状态强制提交，失败多为学校服务器的正常拒绝',
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: scheme.onErrorContainer),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

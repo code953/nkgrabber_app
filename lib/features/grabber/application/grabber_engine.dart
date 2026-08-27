@@ -37,16 +37,21 @@ class GrabberEngine {
     required int maxConcurrentAccounts,
     required int minRequestIntervalMs,
     required int userIntervalMs,
+    bool debugMode = false,
   }) : _courseTargetDao = courseTargetDao,
        _grabTaskDao = grabTaskDao,
        _adapterResolver = adapterResolver,
        _maxConcurrent = maxConcurrentAccounts,
+       _debugMode = debugMode,
        _effectiveIntervalMs = max(userIntervalMs, minRequestIntervalMs);
 
   final CourseTargetDao _courseTargetDao;
   final GrabTaskDao _grabTaskDao;
   final AdapterResolver _adapterResolver;
   final int _maxConcurrent;
+
+  /// Lets workers submit against batches the `xkms` gate would refuse.
+  final bool _debugMode;
 
   /// Effective interval: max of the user setting and the local floor.
   /// Jitter is applied upward only, never below the floor.
@@ -136,6 +141,7 @@ class GrabberEngine {
         accountId: accountId,
         adapter: adapter,
         effectiveIntervalMs: _effectiveIntervalMs,
+        debugMode: _debugMode,
         onTargetResult: (targetId, {required bool success, String? message}) {
           if (success) {
             completedTargets.add(targetId);

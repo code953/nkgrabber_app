@@ -10,6 +10,7 @@ import 'package:nkgrabber/features/accounts/application/accounts_notifier.dart';
 import 'package:nkgrabber/features/courses/application/course_targets_notifier.dart';
 import 'package:nkgrabber/infrastructure/campus/models/campus_models.dart';
 import 'package:nkgrabber/infrastructure/campus/xkms_enum.dart';
+import 'package:nkgrabber/infrastructure/providers.dart';
 
 class CourseConfigPage extends ConsumerWidget {
   const CourseConfigPage({super.key});
@@ -135,6 +136,10 @@ class _BatchPickerPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final batches = ref.watch(batchesProvider(accountId));
+    // Debug mode lifts the selectability gate so a closed or unrecognised
+    // batch can be targeted deliberately.
+    final debugMode =
+        ref.watch(appSettingsProvider).valueOrNull?.debugModeEnabled ?? false;
 
     return Scaffold(
       appBar: AppBar(title: const Text('选择批次')),
@@ -153,16 +158,22 @@ class _BatchPickerPage extends ConsumerWidget {
             itemBuilder: (context, i) {
               final b = list[i];
               final blockedReason = Xkms.blockedReason(b.xkms);
+              final selectable = blockedReason == null || debugMode;
               return ListTile(
                 title: Text(b.batchName),
                 subtitle: Text(
-                  '${Xkms.labelFor(b.xkms)} · ${b.kssj} ~ ${b.jssj}',
+                  blockedReason != null && debugMode
+                      ? '${Xkms.labelFor(b.xkms)} · ${b.kssj} ~ ${b.jssj}'
+                            '\n调试模式：$blockedReason，仍可选择'
+                      : '${Xkms.labelFor(b.xkms)} · ${b.kssj} ~ ${b.jssj}',
                 ),
+                isThreeLine: blockedReason != null && debugMode,
                 trailing: const Icon(Icons.chevron_right),
                 // A closed or unrecognised batch cannot be submitted, so it is
-                // shown (so the user can see it exists) but not selectable.
-                enabled: blockedReason == null,
-                onTap: blockedReason != null
+                // shown (so the user can see it exists) but not selectable —
+                // unless debug mode is on, which exists to try anyway.
+                enabled: selectable,
+                onTap: !selectable
                     ? null
                     : () => Navigator.of(context).push(
                         MaterialPageRoute<void>(

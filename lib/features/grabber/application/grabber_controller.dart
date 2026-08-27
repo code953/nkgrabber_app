@@ -32,6 +32,7 @@ final grabberProvider = StateNotifierProvider<GrabberController, GrabberState>((
     maxConcurrentAccounts: settings?.maxConcurrentAccounts ?? 3,
     minRequestIntervalMs: settings?.minRequestIntervalMs ?? 800,
     userIntervalMs: settings?.userIntervalMs ?? 1000,
+    debugMode: settings?.debugModeEnabled ?? false,
   );
 
   return GrabberController(engine);

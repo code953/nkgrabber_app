@@ -24,7 +24,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   @override
   MigrationStrategy get migration {
@@ -70,6 +70,12 @@ class AppDatabase extends _$AppDatabase {
           // with a hardcoded column list that silently rots on schema change.
           // ignore: experimental_member_use
           await m.alterTable(TableMigration(appSettings));
+        }
+
+        // v3 → v4: debug mode. Defaults to false, so an upgraded install
+        // behaves exactly as before until the user turns it on.
+        if (from < 4) {
+          await m.addColumn(appSettings, appSettings.debugModeEnabled);
         }
       },
       beforeOpen: (details) async {
