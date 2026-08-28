@@ -45,3 +45,4 @@ app.*.map.json
 /android/app/release
 
 logs_89556353535/*
+message.txt
