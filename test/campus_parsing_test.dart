@@ -20,10 +20,12 @@ import 'package:dio_cookie_manager/dio_cookie_manager.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nkgrabber/core/errors/app_exception.dart';
 import 'package:nkgrabber/core/utils/constants.dart';
+import 'package:nkgrabber/features/grabber/application/retry_classifier.dart';
 import 'package:nkgrabber/infrastructure/campus/campus_adapter_impl.dart';
 import 'package:nkgrabber/infrastructure/campus/campus_client_factory.dart';
 import 'package:nkgrabber/infrastructure/campus/campus_envelope.dart';
 import 'package:nkgrabber/infrastructure/campus/crypto/rsa_encryptor.dart';
+import 'package:nkgrabber/infrastructure/campus/models/campus_models.dart';
 import 'package:nkgrabber/infrastructure/campus/portal_sso.dart';
 import 'package:nkgrabber/infrastructure/campus/xkms_enum.dart';
 
@@ -245,6 +247,33 @@ void main() {
         }, what: '提交选课'),
         throwsA(
           isA<CampusException>().having((e) => e.message, 'message', '人数已满'),
+        ),
+      );
+    });
+
+    test('a missing code is success for a read, but not under requireCode', () {
+      // Read endpoints legitimately omit `code`, so the default stands.
+      expect(
+        unwrapCampusCommand({
+          'result': {'msg': 'ok'},
+        }, what: '读取')['msg'],
+        'ok',
+      );
+
+      // For a submit it means "we do not understand this response". Calling it
+      // success is what reported 抢课成功 for a course never granted.
+      expect(
+        () => unwrapCampusCommand({
+          'result': {'msg': 'ok'},
+        }, what: '提交选课', requireCode: true),
+        throwsA(
+          isA<CampusException>()
+              .having((e) => e.message, 'message', contains('无法确认结果'))
+              .having(
+                (e) => e.type,
+                'type',
+                CampusExceptionType.unknownResponse,
+              ),
         ),
       );
     });
@@ -622,6 +651,119 @@ void main() {
         sawCookielessFinalHop,
         isFalse,
         reason: 'a hop arriving without gdpk is what produced the live 403',
+      );
+    });
+  });
+
+  // A submit only counts as success when the server says so. Driven through
+  // the real CampusAdapterImpl against a loopback server, because asserting on
+  // unwrapCampusCommand alone would pass even if the submit call site stopped
+  // passing requireCode — which is exactly the defect being pinned.
+  group('submit verdict', () {
+    late HttpServer server;
+    late String origin;
+    late String responseBody;
+
+    setUp(() async {
+      server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      origin = 'http://${server.address.host}:${server.port}';
+      unawaited(
+        server.forEach((req) async {
+          req.response.write(responseBody);
+          await req.response.close();
+        }),
+      );
+    });
+
+    tearDown(() => server.close(force: true));
+
+    Future<SubmitResult> submit() {
+      final client = CampusClient(accountId: 'test', baseUrl: origin);
+      addTearDown(client.dispose);
+      return CampusAdapterImpl(client: client).submit(
+        const SubmitSelection(xkid: 'B1', xkms: '1', kmhList: ['C1']),
+      );
+    }
+
+    test('code "0" is the only thing that reports success', () async {
+      responseBody = '{"result":{"code":"0","msg":"选课成功"},"status":200}';
+
+      final result = await submit();
+
+      expect(result.success, isTrue);
+      expect(result.message, '选课成功');
+    });
+
+    test('a response with no code is not reported as success', () async {
+      // The exact shape behind the bug report: the desktop client announced
+      // 抢课成功 for a course that was never selectable, while the phone kept
+      // retrying. `code == null` used to fall through to `success: true`.
+      responseBody = '{"result":{},"status":200}';
+
+      await expectLater(
+        submit(),
+        throwsA(
+          isA<CampusException>().having(
+            (e) => e.message,
+            'message',
+            contains('无法确认结果'),
+          ),
+        ),
+      );
+    });
+
+    test('an HTML error page is not reported as success', () async {
+      responseBody = '<html><body>500</body></html>';
+
+      await expectLater(submit(), throwsA(isA<CampusException>()));
+    });
+
+    test('a full course reported via result.code retries', () async {
+      responseBody =
+          '{"result":{"code":"-1","msg":"该课程人数已满"},"status":200}';
+
+      await expectLater(
+        submit(),
+        throwsA(
+          isA<CampusException>().having(
+            (e) => e.type,
+            'type',
+            CampusExceptionType.courseFull,
+          ),
+        ),
+      );
+    });
+
+    test('a full course reported via the envelope error also retries', () async {
+      // The school signals refusals both ways. Only result.code went through
+      // the message mapper, so this arrived typed as parameterError and the
+      // classifier abandoned the target instead of retrying it.
+      responseBody =
+          '{"error":{"code":"-32000","message":"该课程人数已满"},"status":200}';
+
+      await expectLater(
+        submit(),
+        throwsA(
+          isA<CampusException>().having(
+            (e) => e.type,
+            'type',
+            CampusExceptionType.courseFull,
+          ),
+        ),
+      );
+    });
+
+    test('courseFull is a retry, so the worker keeps trying', () {
+      // Ties the classification above to the observable behaviour the user
+      // compared against: the phone client never stops on a full course.
+      expect(
+        RetryClassifier.classify(
+          const CampusException(
+            message: '该课程人数已满',
+            type: CampusExceptionType.courseFull,
+          ),
+        ),
+        RetryDecision.retry,
       );
     });
   });

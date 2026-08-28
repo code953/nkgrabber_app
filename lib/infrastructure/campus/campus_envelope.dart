@@ -119,9 +119,13 @@ List<Map<String, dynamic>> unwrapCampusRows(
 /// Unwrap a command envelope, throwing unless `result.code == "0"`.
 ///
 /// Returns the result object so the caller can read `msg`.
+///
+/// [requireCode] demands the server actually say `code`. Use it wherever a
+/// wrong verdict is worse than no verdict — see [_throwIfCommandFailed].
 Map<String, dynamic> unwrapCampusCommand(
   Map<String, dynamic> body, {
   required String what,
+  bool requireCode = false,
 }) {
   final result = unwrapCampusResult(body, what: what);
   if (result is! Map<String, dynamic>) {
@@ -130,20 +134,34 @@ Map<String, dynamic> unwrapCampusCommand(
       type: CampusExceptionType.unknownResponse,
     );
   }
-  _throwIfCommandFailed(result, what: what);
+  _throwIfCommandFailed(result, what: what, requireCode: requireCode);
   return result;
 }
 
 /// Throw when a result object carries a non-zero `code`.
 ///
-/// A result with no `code` at all is treated as success: the read endpoints
-/// omit it, and only command endpoints are documented to set it.
+/// A result with no `code` at all is treated as success by default: the read
+/// endpoints omit it, and only command endpoints are documented to set it.
+///
+/// [requireCode] flips that for callers where the absent-code case is not
+/// evidence of anything. Silence is not consent: a submit response we cannot
+/// parse — an HTML error page that still decodes, a `{"result":{}}`, a shape
+/// the school changed — is a response we do not understand, and reporting it
+/// as 抢课成功 tells the user to stop trying for a course they never got.
 void _throwIfCommandFailed(
   Map<String, dynamic> result, {
   required String what,
+  bool requireCode = false,
 }) {
   final code = result['code']?.toString();
-  if (code == null || code == '0') return;
+  if (code == null) {
+    if (!requireCode) return;
+    throw CampusException(
+      message: '$what失败：响应缺少 code 字段，无法确认结果',
+      type: CampusExceptionType.unknownResponse,
+    );
+  }
+  if (code == '0') return;
 
   final msg = result['msg']?.toString();
   throw CampusException(

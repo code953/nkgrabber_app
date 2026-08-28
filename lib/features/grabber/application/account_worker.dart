@@ -143,12 +143,14 @@ class AccountWorker {
           return null; // Chunk done.
         }
 
-        // submit() returned success=false without throwing — treat as a
-        // transient failure so the campus_adapter's message→exception
-        // mapping in the exception path can drive the classifier.
-        // If no exception was raised, retry after the interval.
-        _logger.debug(
-          '[$accountId] Submit returned failure: ${result.message}, retrying',
+        // submit() reported a failure without throwing. Nothing has been
+        // classified, so the only safe reading is "not selected yet" — keep
+        // retrying like the exception path's retry branch does. Reporting
+        // success here is what the caller must never be allowed to infer from
+        // an absence of errors.
+        _logger.warn(
+          '[$accountId] Submit reported failure without an exception: '
+          '${result.message} — retrying',
         );
       } on Exception catch (e) {
         final decision = RetryClassifier.classify(e);

@@ -348,16 +348,29 @@ class CampusAdapterImpl implements CampusAdapter {
 
       // Map the server's message to a typed exception so RetryClassifier can
       // act on it, rather than letting every failure look retryable.
+      //
+      // requireCode: a submit response with no `code` is a response we do not
+      // understand, not a success. Defaulting it to success is what made a
+      // course the server never granted show up as 抢课成功 while the phone
+      // client — which does not make that assumption — kept retrying.
       final Map<String, dynamic> result;
       try {
-        result = unwrapCampusCommand(body, what: '提交选课');
+        result = unwrapCampusCommand(body, what: '提交选课', requireCode: true);
       } on CampusException catch (e) {
-        if (e.type == CampusExceptionType.unknownResponse) {
+        // The school signals a refusal two different ways: `result.code` and
+        // the envelope's `error` object. Both carry the same human-readable
+        // Chinese message, so both go through the mapper — classifying only
+        // the first left 人数已满-via-error typed as a parameterError, which
+        // the classifier abandons the target on instead of retrying.
+        if (e.type == CampusExceptionType.unknownResponse ||
+            e.type == CampusExceptionType.parameterError) {
           throw _mapSubmitMessage(e.message);
         }
         rethrow;
       }
 
+      // Trust only what the server said. `code == "0"` got us here, so this is
+      // the one place success is asserted rather than assumed.
       return SubmitResult(success: true, message: campusString(result['msg']));
     });
   }
