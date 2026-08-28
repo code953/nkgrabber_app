@@ -422,24 +422,25 @@ void main() {
   });
 
   group('Xkms classification', () {
-    test('1/2/3 are submittable', () {
-      for (final code in ['1', '2', '3']) {
+    test('every value seen on the wire is submittable', () {
+      for (final code in ['0', '1', '2', '3']) {
         expect(Xkms.statusOf(code), XkmsStatus.submittable);
         expect(Xkms.blockedReason(code), isNull);
       }
     });
 
-    test('0 means the batch has closed, not that the client is outdated', () {
-      // The live deployment's only batch reports xkms=0. Treating that as
-      // unrecognised told the user to wait for a client upgrade, which would
-      // never have helped.
-      expect(Xkms.statusOf('0'), XkmsStatus.closed);
-      expect(Xkms.labelFor('0'), '选课已结束');
-      expect(Xkms.blockedReason('0'), '该批次选课已结束');
+    test('0 is submittable — a capture of an accepted submission says so', () {
+      // Previously classified as 选课已结束 and blocked, on the reasoning that
+      // the only batch then visible carried it and was over. A 2026-03-14
+      // capture shows the school's own page posting xkms=0 and the server
+      // answering code:"0". Blocking it made the client refuse an ordinary
+      // batch and forced debug mode on to grab anything at all.
+      expect(Xkms.statusOf('0'), XkmsStatus.submittable);
       expect(
         Xkms.blockedReason('0'),
-        isNot(contains('升级')),
-        reason: 'a closed batch is not a client-version problem',
+        isNull,
+        reason:
+            'the server accepts xkms=0; refusing it is our bug, not a state',
       );
     });
 
@@ -449,6 +450,7 @@ void main() {
     });
 
     test('labels match the submittable modes', () {
+      expect(Xkms.labelFor('0'), '选课');
       expect(Xkms.labelFor('1'), '抢选');
       expect(Xkms.labelFor('2'), '正选');
       expect(Xkms.labelFor('3'), '补退选');
@@ -468,6 +470,16 @@ void main() {
       expect(ua.toLowerCase(), isNot(contains('dart')));
       expect(ua, startsWith('Mozilla/5.0'));
       expect(ua, contains('Chrome/'));
+    });
+
+    test("the portal's own XHR headers are sent", () {
+      // From the same capture. Whether the server enforces them is unknown —
+      // matching the browser costs nothing and removes them as a variable if
+      // it ever starts refusing us.
+      final headers = CampusClient(accountId: 'test').dio.options.headers;
+
+      expect(headers['X-Requested-With'], 'XMLHttpRequest');
+      expect(headers['Origin'], AppConstants.campusBaseUrl);
     });
   });
 
@@ -772,6 +784,25 @@ void main() {
         RetryDecision.retry,
       );
     });
+
+    test('the captured success reply is accepted, data and all', () async {
+      // Verbatim from a 2026-03-14 capture of the school's own page submitting
+      // two courses during an open batch. `data` is "1" for a two-course
+      // submission that the server accepted, so it counts something other than
+      // granted courses — gating on it would turn this success into a failure.
+      responseBody =
+          '{"result":{"code":"0","msg":"提交成功！","data":"1"},"status":200}';
+
+      final result = await submit();
+
+      expect(result.success, isTrue);
+      expect(result.message, '提交成功！');
+      expect(
+        result.rawData,
+        '1',
+        reason: 'carried for display, not for the verdict',
+      );
+    });
   });
 
   group('submit payload', () {
@@ -792,6 +823,61 @@ void main() {
       );
       expect(jsonDecode(encoded), isA<List<dynamic>>());
     });
+
+    test(
+      'the body matches the captured browser submission field for field',
+      () async {
+        // The 2026-03-14 capture, decoded:
+        //   xkms=0&sftj=1&xkid=<32 hex>&kmhDtoList=[{"kmh":..},{"kmh":..}]&kms=2
+        // This is the one link that was UNVERIFIED until that capture existed.
+        final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+        addTearDown(() => server.close(force: true));
+        final bodies = <String>[];
+        final contentTypes = <String?>[];
+        unawaited(
+          server.forEach((req) async {
+            bodies.add(await utf8.decoder.bind(req).join());
+            contentTypes.add(req.headers.value('content-type'));
+            req.response.write(
+              '{"result":{"code":"0","msg":"提交成功！"},"status":200}',
+            );
+            await req.response.close();
+          }),
+        );
+
+        final client = CampusClient(
+          accountId: 'test',
+          baseUrl: 'http://${server.address.host}:${server.port}',
+        );
+        addTearDown(client.dispose);
+        await CampusAdapterImpl(client: client).submit(
+          const SubmitSelection(
+            xkid: 'e33340e6fd4f4513b91bed3ce8b452bd',
+            xkms: '0',
+            kmhList: [
+              'f4bcaa94244744b78f553888af0f44f7',
+              '75b8dc87bf234c09a463b16523472836',
+            ],
+          ),
+        );
+
+        final fields = Uri.splitQueryString(bodies.single);
+        expect(fields['xkid'], 'e33340e6fd4f4513b91bed3ce8b452bd');
+        expect(fields['xkms'], '0');
+        expect(fields['sftj'], '1');
+        expect(
+          fields['kms'],
+          '2',
+          reason: 'kms is the course count, not a mode',
+        );
+        expect(
+          fields['kmhDtoList'],
+          '[{"kmh":"f4bcaa94244744b78f553888af0f44f7"},'
+          '{"kmh":"75b8dc87bf234c09a463b16523472836"}]',
+        );
+        expect(contentTypes.single, contains('charset=UTF-8'));
+      },
+    );
   });
 }
 

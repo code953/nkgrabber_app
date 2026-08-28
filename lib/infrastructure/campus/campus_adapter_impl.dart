@@ -327,12 +327,10 @@ class CampusAdapterImpl implements CampusAdapter {
     return _queue.add(() async {
       // kmhDtoList is a JSON array of objects, not a comma-joined list of ids:
       //   kmhDtoList=[{"kmh":"<id>"},{"kmh":"<id>"}]
-      // matching the school's own
-      //   saveStudentXkJs({..., kmhDtoList: JSON.stringify([{kmh: ...}])})
       //
-      // UNVERIFIED against the live server: the only batch on this deployment
-      // closed 2026-04-18, and submitting would mutate a real student's
-      // registration. Derived from the page script, not from a live response.
+      // Verified against a capture of a real submission during an open batch
+      // (2026-03-14): the school's own page sent exactly this body — xkid,
+      // xkms, sftj=1, kms=<count>, kmhDtoList — and got code:"0" back.
       final kmhDtoList = jsonEncode([
         for (final kmh in command.kmhList) {'kmh': kmh},
       ]);
@@ -371,7 +369,18 @@ class CampusAdapterImpl implements CampusAdapter {
 
       // Trust only what the server said. `code == "0"` got us here, so this is
       // the one place success is asserted rather than assumed.
-      return SubmitResult(success: true, message: campusString(result['msg']));
+      //
+      // The reply also carries `data` — a capture of a two-course submission
+      // that the server accepted returned `data:"1"`, so it is not a count of
+      // granted courses, or not only that. With one sample its meaning is a
+      // guess, and a guess that can turn a real success into a reported
+      // failure has no business in the verdict. It is carried through to the
+      // message so the live log shows it and the next capture can settle it.
+      return SubmitResult(
+        success: true,
+        message: campusString(result['msg']),
+        rawData: campusString(result['data']),
+      );
     });
   }
 
@@ -458,7 +467,9 @@ class CampusAdapterImpl implements CampusAdapter {
     final response = await _client.dio.post<List<int>>(
       path,
       data: body,
-      options: Options(contentType: 'application/x-www-form-urlencoded'),
+      options: Options(
+        contentType: 'application/x-www-form-urlencoded; charset=UTF-8',
+      ),
     );
     _updateClockOffset(response);
     return response;

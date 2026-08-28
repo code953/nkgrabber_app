@@ -300,6 +300,7 @@ void main() {
 
   group('XkmsMode', () {
     test('fromCode parses valid values', () {
+      expect(XkmsMode.fromCode('0'), XkmsMode.elective);
       expect(XkmsMode.fromCode('1'), XkmsMode.rush);
       expect(XkmsMode.fromCode('2'), XkmsMode.regular);
       expect(XkmsMode.fromCode('3'), XkmsMode.addDrop);
@@ -312,6 +313,7 @@ void main() {
     });
 
     test('has correct labels', () {
+      expect(XkmsMode.elective.label, '选课');
       expect(XkmsMode.rush.label, '抢选');
       expect(XkmsMode.regular.label, '正选');
       expect(XkmsMode.addDrop.label, '补退选');
@@ -971,10 +973,14 @@ void main() {
   // Debug mode
   // ═══════════════════════════════════════════════════════════════════════
   group('Debug mode', () {
-    /// Drive one worker over a single closed-batch target and report what it
-    /// did. The worker is the real gate — the batch picker is only advisory.
+    /// Drive one worker over a single unrecognised-xkms target and report what
+    /// it did. The worker is the real gate — the batch picker is only advisory.
+    ///
+    /// `"0"` used to be the blocked case here; a capture of an accepted
+    /// submission moved it to submittable, so an unrecognised value is now the
+    /// only thing the gate stops.
     Future<({List<SubmitSelection> submits, List<String?> messages})>
-    runWorker({required bool debugMode, String xkms = Xkms.closedCode}) async {
+    runWorker({required bool debugMode, String xkms = '99'}) async {
       final adapter = _RecordingAdapter(xkms: xkms);
       final messages = <String?>[];
 
@@ -1000,31 +1006,33 @@ void main() {
     }
 
     test(
-      'off: a closed batch is refused without contacting the server',
+      'off: an unrecognised mode is refused without contacting the server',
       () async {
         final r = await runWorker(debugMode: false);
 
         expect(r.submits, isEmpty);
-        expect(r.messages, ['该批次选课已结束']);
+        expect(r.messages.single, contains('升级'));
       },
     );
 
     test(
-      "on: a closed batch is submitted with the server's own xkms",
+      "on: an unrecognised mode is submitted with the server's own xkms",
       () async {
         final r = await runWorker(debugMode: true);
 
         // The whole point is to see the real server response, so the value must
         // not be swapped for a submittable one.
         expect(r.submits, hasLength(1));
-        expect(r.submits.single.xkms, Xkms.closedCode);
+        expect(r.submits.single.xkms, '99');
       },
     );
 
-    test('on: an unrecognised xkms is also submitted verbatim', () async {
-      final r = await runWorker(debugMode: true, xkms: '99');
+    test('xkms=0 needs no debug mode at all', () async {
+      // It reached the server in the capture and was accepted; blocking it was
+      // the client inventing a batch state the server never reported.
+      final r = await runWorker(debugMode: false, xkms: '0');
 
-      expect(r.submits.single.xkms, '99');
+      expect(r.submits.single.xkms, '0');
     });
 
     testWidgets('the settings toggle persists and drives the grabber banner', (

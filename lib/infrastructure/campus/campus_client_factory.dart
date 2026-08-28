@@ -30,7 +30,8 @@ class CampusClient {
         receiveTimeout: const Duration(seconds: 15),
         // Don't auto-decode; we handle GBK manually.
         responseType: ResponseType.bytes,
-        // A stock desktop-Chrome header set. The previous UA ended in
+        // A stock desktop-Chrome header set, matched against a capture of the
+        // school's own page making a real submission. The previous UA ended in
         // `NKgrabber/1.0`, which named the tool in every single request — one
         // `grep` server-side would have found every user of it. Nothing in the
         // campus protocol keys off the UA, so there is no reason to be
@@ -44,6 +45,12 @@ class CampusClient {
               'text/html,application/xhtml+xml,application/xml;q=0.9,'
               'image/avif,image/webp,*/*;q=0.8',
           'Accept-Language': 'zh-CN,zh;q=0.9',
+          // The portal's own XHRs send these. Whether the server enforces them
+          // is unknown — but a request that differs from the browser's in a
+          // field we could just as easily match is a difference we would have
+          // to rule out first if the server ever starts refusing us.
+          'X-Requested-With': 'XMLHttpRequest',
+          'Origin': baseUrl ?? AppConstants.campusBaseUrl,
         },
       ),
     );

@@ -165,7 +165,12 @@ class AccountWorker {
           _log(
             GrabLogKind.success,
             '选课成功：$courseNames',
-            detail: result.message,
+            // data's meaning is still unsettled — show it so the next capture
+            // can settle it, but it plays no part in the verdict above.
+            detail: [
+              ?result.message,
+              if (result.rawData != null) 'data=${result.rawData}',
+            ].join(' · '),
           );
           for (final t in chunk) {
             onTargetResult(t.id, success: true, message: result.message);

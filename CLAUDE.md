@@ -82,7 +82,7 @@ Every page reads its data through providers; there are no stubs left.
 ## Key Technical Constraints
 
 - **One HTTP target only**: the campus system (`http://campus.nks.edu.cn`, form POST). There is no business backend — do not add one.
-- **The User-Agent must not name the app.** It is a stock desktop-Chrome string in `campus_client_factory.dart`. The original ended in `NKgrabber/1.0`, which signed every request in the school's access log; nothing in the campus protocol keys off the UA, so identifying ourselves bought nothing. Pinned by a test.
+- **The User-Agent must not name the app.** It is a stock desktop-Chrome string in `campus_client_factory.dart`. The original ended in `NKgrabber/1.0`, which signed every request in the school's access log; nothing in the campus protocol keys off the UA, so identifying ourselves bought nothing. The header set also carries `X-Requested-With: XMLHttpRequest` and `Origin`, matching a capture of the portal's own XHR — whether the server enforces them is unknown, but a difference we could cheaply avoid is one we would otherwise have to rule out first if it ever starts refusing us. Pinned by a test.
 - **The campus wire format is not guessable — it was measured.** Every field name, body format, and envelope rule in `lib/infrastructure/campus/` came from probing the live deployment, and several are counter-intuitive:
   - `status` in the response envelope is an **HTTP-like int** (200), not a boolean. `status == true` is never satisfied.
   - The payload is under `result`, never under `data`. Reading `data` yields a silent empty list, not an error.
@@ -98,20 +98,21 @@ Every page reads its data through providers; there are no stubs left.
   - The SSO chain is followed **by hand**, one hop per request (`_followSsoRedirects`). Dio's `followRedirects` lives in the HTTP adapter, *below* the interceptor chain, so `CookieManager` never sees intermediate responses — and `gdpk` is set on hop 0 only. With automatic following the final hop arrives cookie-less and the server answers 403.
 
   All of this is pinned by verbatim fixtures in `test/campus_parsing_test.dart`. Before changing a parser, read the fixture — if a change contradicts one, the change is wrong unless the school actually changed. `campus_envelope.dart` is the single unwrap layer; do not re-implement envelope checks at a call site.
-- **The submit path is the one link never verified against the live server.** `saveStudentXkJs`'s `kmhDtoList` shape was derived from the school's own page script, not from a response: the only batch on this deployment closed 2026-04-18, and submitting would have mutated a real student's registration. The `UNVERIFIED` comment at that call site stays until someone confirms it during an open batch.
+- **The submit path was verified by a packet capture, not by us submitting.** A capture of the school's own page posting `saveStudentXkJs` during an open batch (2026-03-14) confirmed the body field for field — `xkid`, `xkms`, `sftj=1`, `kms=<count>`, `kmhDtoList=[{"kmh":…},…]` — and the reply `{"result":{"code":"0","msg":"提交成功！","data":"1"},"status":200}`. The former `UNVERIFIED` comment is gone; `test/campus_parsing_test.dart` pins the body against a loopback server. Two things that capture settled, both of which had been guessed wrong:
+  - `xkms=0` is **submittable** — see the xkms bullet below.
+  - `data` is `"1"` for a **two-course** submission the server accepted, so it is not a count of granted courses. It is carried on `SubmitResult.rawData` for the live log and takes no part in the verdict; with one sample, gating on it could turn a real success into a reported failure.
 - **Per-account isolation**: each campus account gets its own `Dio` + in-memory `CookieJar`. Cookies never touch disk. `AccountsNotifier` owns these clients and disposes them on account removal, failed login, and its own disposal.
 - **Secure storage only**: passwords and cookies live in platform secure storage (Android Keystore / iOS Keychain / Windows DPAPI / Linux Secret Service). Drift only stores reference keys.
 - **Log sanitization**: all log output passes through `LogSanitizer` before emission. Passwords, cookies, Bearer tokens, activation codes, `deviceToken`, `licenseCode` are replaced with `[REDACTED]`. The last three patterns are kept even though the online business is gone — removing a redaction rule is never an improvement. Student names, student numbers, and course names are never logged either: log the opaque UUID instead. `mycenter_token` is a live session credential and must never be logged.
 - **Grabber state machine**: `idle → preparing → running → success/stopped/interrupted/captchaRequired/failed`. No auto-recovery after `interrupted`. 30-minute hard timeout. **Stopping is restartable**: `stop()` leaves the state in `stopped`, from which `start()` may be called directly — `GrabberPage` shows 重新开始 there rather than forcing a reset first, which during an open batch is time the user does not have. `start()` builds a fresh `GrabberState` rather than `copyWith`ing, or the new run's preparing phase displays the previous run's tally. `GrabberStatus.paused` is retained for the `GrabTaskStatus` mapping and old task rows but **is no longer produced**: pause cancelled the workers exactly as stop did (`AccountWorker._cancelled` is a one-way latch) yet parked the state where neither stop nor reset was offered — a soft deadlock.
 - **The live grabber log (`GrabLogBus`) is display-only and has two producers.** `_CampusLoggingInterceptor` publishes requests and responses, because it is the only place that sees the wire; `AccountWorker` / `GrabberEngine` publish verdicts and lifecycle, because the interceptor cannot tell an accepted submit from a refused one — both are HTTP 200. It is a process-wide singleton because clients are built deep inside `AccountsNotifier`, and the buffer is capped at 500 entries. Course names and account labels may appear **on screen** (the user owns their data) but nothing on this bus reaches the log file, whose rules are unchanged.
 - **effectiveIntervalMs = max(userIntervalMs, settings.minRequestIntervalMs)** — jitter is upward only, never below the floor. Both values come from `app_settings`.
-- **xkms classification** lives in `Xkms` (`xkms_enum.dart`), which distinguishes three cases, because two of them need different words for the user:
-  - `"1"|"2"|"3"` → submittable (抢选 / 正选 / 补退选).
-  - `"0"` → the batch's selection window has **closed**. This is a real documented state, not a parsing failure. Telling the user to wait for a client upgrade here sends them chasing a bug that does not exist.
+- **xkms classification** lives in `Xkms` (`xkms_enum.dart`) and distinguishes exactly two cases:
+  - `"0"|"1"|"2"|"3"` → submittable (选课 / 抢选 / 正选 / 补退选).
   - anything else → genuinely unknown; mark the target `failed` and ask for an upgrade.
 
-  Never submit with a defaulted `xkms`. The batch picker refuses to select any non-submittable batch.
-- **Debug mode (`app_settings.debugModeEnabled`, default off) lifts the xkms gate, not the xkms value.** With it on, the batch picker lets a closed/unknown batch be selected and `AccountWorker` submits instead of reporting `blockedReason` — but the request still carries the **server's own** `xkms` verbatim. Substituting a submittable code would destroy the only thing the mode exists to observe: what the campus system actually answers for a closed batch. `GrabberEngine` reads the flag at construction like the other limits, so the settings toggle is locked while a task runs, and `GrabberPage` shows a persistent banner while it is on — without that, a user who forgot the switch reads the server's correct refusal as a client bug.
+  `"0"` was previously classified as "the selection window has closed" and blocked, on the reasoning that the only batch then visible carried it and was over. The 2026-03-14 capture disproves that: the school's own page posted `xkms=0` and the server answered `code:"0"`. Batch state is carried by `zt` / `jssj`, not by `xkms`, and blocking `"0"` made the client refuse an ordinary batch — the user had to switch on debug mode to grab anything at all. Never submit with a defaulted `xkms`; the batch picker still refuses a genuinely unrecognised one.
+- **Debug mode (`app_settings.debugModeEnabled`, default off) lifts the xkms gate, not the xkms value.** With it on, the batch picker lets an unrecognised batch be selected and `AccountWorker` submits instead of reporting `blockedReason` — but the request still carries the **server's own** `xkms` verbatim. Substituting a known code would destroy the only thing the mode exists to observe: what the campus system actually answers for a mode we do not recognise. `GrabberEngine` reads the flag at construction like the other limits, so the settings toggle is locked while a task runs, and `GrabberPage` shows a persistent banner while it is on — without that, a user who forgot the switch reads the server's correct refusal as a client bug.
 - **Localization delegates are mandatory**: `MaterialApp.router` forces `locale: Locale('zh')`, and the implicit `DefaultMaterialLocalizations` supports `en` only. `localizationsDelegates: S.localizationsDelegates` (which bundles the three `Global*` delegates) must stay wired, or every Material widget that calls `MaterialLocalizations.of()` — `NavigationRail`, `NavigationBar`, `Scaffold` drawers — throws at build time. Keep `supportedLocales: S.supportedLocales` so it tracks the `.arb` files.
 
 ## Database Schema (Drift, schemaVersion=4)
@@ -161,11 +162,12 @@ Tests live in `test/widget_test.dart` and `test/campus_parsing_test.dart`.
 - `ClockSyncStatus` (`campusNow` offset in both directions)
 - Interval calculation (`max(userIntervalMs, minRequestIntervalMs)`)
 
-`campus_parsing_test.dart` (45 cases) covers the response-parsing layer:
+`campus_parsing_test.dart` (48 cases) covers the response-parsing layer:
 `RsaEncryptor.extractFromHtml`, the `campus_envelope` unwrappers,
 `campusInt`/`campusString`, portal SSO (`parsePortalSession`,
 `findCourseSelectionApp`, `buildSsoUrl`), `Xkms` classification, the submit
-payload shape, the User-Agent, the **submit verdict**, and the two
+payload shape **checked field for field against the captured browser request**,
+the request headers, the **submit verdict**, and the two
 transport-level workarounds the school's server forces on us (malformed
 `Set-Cookie`, manual SSO redirect following). Three groups run a loopback
 `HttpServer` and drive the real `CampusClient` + `CampusAdapterImpl` through
@@ -205,13 +207,14 @@ which does not resolve in a test, so the page would spin forever and
   a run publishes both lifecycle and verdict lines
 - `SettingsPage`: renders the stored row, persists a slider release, warns
   when the user interval is below the floor
-- Debug mode: `AccountWorker` refuses a closed batch with the flag off and
-  submits it — carrying the server's own `xkms`, including an unrecognised
-  one — with it on; the settings toggle persists and drives the `GrabberPage`
-  banner. Driven through a recording `CampusAdapter` rather than by asserting
-  on `Xkms.blockedReason`, which would pass with the bypass reverted.
+- Debug mode: `AccountWorker` refuses an unrecognised mode with the flag off and
+  submits it — carrying the server's own `xkms` verbatim — with it on;
+  `xkms=0` needs no debug mode at all; the settings toggle persists and drives
+  the `GrabberPage` banner. Driven through a recording `CampusAdapter` rather
+  than by asserting on `Xkms.blockedReason`, which would pass with the bypass
+  reverted.
 
-Run with `flutter test`. All 115 tests must pass before committing.
+Run with `flutter test`. All 118 tests must pass before committing.
 
 New tests must be checked negatively — break the wiring under test and
 confirm the case goes red. A green test proves nothing on its own; several of

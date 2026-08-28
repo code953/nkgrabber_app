@@ -144,6 +144,7 @@ class SubmitResult {
     required this.success,
     this.message,
     this.failedKmhList = const [],
+    this.rawData,
   });
 
   /// Whether the submission succeeded.
@@ -154,6 +155,13 @@ class SubmitResult {
 
   /// Course numbers that failed (partial success scenario).
   final List<String> failedKmhList;
+
+  /// The reply's `result.data`, carried verbatim for display.
+  ///
+  /// Deliberately not part of the verdict: an accepted two-course submission
+  /// returned `"1"`, so whatever it counts, it is not granted courses — and
+  /// one sample is not enough to gate a success on.
+  final String? rawData;
 }
 
 /// Result of a withdraw operation.

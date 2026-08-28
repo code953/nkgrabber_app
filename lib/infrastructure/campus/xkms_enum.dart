@@ -8,6 +8,19 @@ library;
 
 /// Selection modes this client can submit against.
 enum XkmsMode {
+  /// The mode the live deployment reports for an ordinary elective batch.
+  ///
+  /// This was previously classified as "the selection window has closed", on
+  /// the reasoning that the only batch visible at the time carried it and was
+  /// over. A packet capture of a real submission during an open batch
+  /// (2026-03-14) settles it: `xkms=0` was sent verbatim and the server
+  /// answered `code:"0" / 提交成功！`. The batch state is carried by `zt` /
+  /// `jssj`, not by this field.
+  ///
+  /// The label is deliberately generic — the capture proves the value is
+  /// submittable, not what the school calls it.
+  elective('0', '选课'),
+
   /// 抢选 (rush selection).
   rush('1', '抢选'),
 
@@ -27,8 +40,8 @@ enum XkmsMode {
 
   /// Parse a submittable campus xkms value.
   ///
-  /// Returns null for anything else — including the known-but-closed `"0"`.
-  /// Use [Xkms.statusOf] when you need to tell "closed" apart from "unknown".
+  /// Returns null only for values never seen on the wire. Use [Xkms.statusOf]
+  /// when you want the classification rather than the mode.
   static XkmsMode? fromCode(String code) {
     for (final mode in values) {
       if (mode.code == code) return mode;
@@ -39,11 +52,8 @@ enum XkmsMode {
 
 /// What a given `xkms` value means for the user.
 enum XkmsStatus {
-  /// Submittable: one of 1 / 2 / 3.
+  /// Submittable: one of 0 / 1 / 2 / 3.
   submittable,
-
-  /// The batch's selection window has closed.
-  closed,
 
   /// A value this client has never seen.
   unknown,
@@ -51,34 +61,26 @@ enum XkmsStatus {
 
 /// Classification of raw `xkms` values.
 ///
-/// `"0"` is a real, documented state (选课已结束), not a parsing failure.
-/// Reporting it as "unrecognised, please upgrade the client" — which is what a
-/// bare [XkmsMode.fromCode] null-check does — sends the user chasing a client
-/// bug when the batch is simply over.
+/// Every value observed on the wire so far is submittable, `"0"` included —
+/// see [XkmsMode.elective] for the capture that settled that. A value outside
+/// the set is the one case worth blocking on, because submitting an `xkms` the
+/// school never sent us is a guess about a protocol we only know by
+/// measurement.
 class Xkms {
   const Xkms._();
 
-  /// The value the campus system reports for a finished batch.
-  static const closedCode = '0';
-
   /// Classify a raw campus `xkms` value.
-  static XkmsStatus statusOf(String code) {
-    if (XkmsMode.fromCode(code) != null) return XkmsStatus.submittable;
-    if (code == closedCode) return XkmsStatus.closed;
-    return XkmsStatus.unknown;
-  }
+  static XkmsStatus statusOf(String code) => XkmsMode.fromCode(code) != null
+      ? XkmsStatus.submittable
+      : XkmsStatus.unknown;
 
   /// A label for any raw value, submittable or not.
-  static String labelFor(String code) => switch (statusOf(code)) {
-    XkmsStatus.submittable => XkmsMode.fromCode(code)!.label,
-    XkmsStatus.closed => '选课已结束',
-    XkmsStatus.unknown => '未知模式',
-  };
+  static String labelFor(String code) =>
+      XkmsMode.fromCode(code)?.label ?? '未知模式';
 
   /// Why a batch cannot be submitted, or null when it can.
   static String? blockedReason(String code) => switch (statusOf(code)) {
     XkmsStatus.submittable => null,
-    XkmsStatus.closed => '该批次选课已结束',
     XkmsStatus.unknown => '无法识别的选课模式，请等待客户端升级',
   };
 }
