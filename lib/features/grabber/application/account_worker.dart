@@ -7,8 +7,11 @@ library;
 import 'dart:async';
 import 'dart:math';
 
+import 'package:nkgrabber/core/errors/app_exception.dart';
 import 'package:nkgrabber/core/logging/app_logger.dart';
 import 'package:nkgrabber/features/grabber/application/retry_classifier.dart';
+import 'package:nkgrabber/features/grabber/domain/grab_log_bus.dart';
+import 'package:nkgrabber/features/grabber/domain/grab_log_entry.dart';
 import 'package:nkgrabber/infrastructure/campus/campus_adapter.dart';
 import 'package:nkgrabber/infrastructure/campus/models/campus_models.dart';
 import 'package:nkgrabber/infrastructure/campus/xkms_enum.dart';
@@ -26,12 +29,19 @@ class AccountWorker {
     required this.effectiveIntervalMs,
     required this.onTargetResult,
     this.debugMode = false,
+    this.accountLabel,
   });
 
   final String accountId;
   final CampusAdapter adapter;
   final int effectiveIntervalMs;
   final TargetResultCallback onTargetResult;
+
+  /// Label shown next to this account's lines in the live log.
+  ///
+  /// The user owns their own data, so a student number on screen is fine —
+  /// this never reaches the log file, which still gets the opaque id.
+  final String? accountLabel;
 
   /// Skip the `xkms` submittability gate and submit anyway.
   ///
@@ -42,6 +52,10 @@ class AccountWorker {
   final _logger = AppLogger('AccountWorker');
   final _random = Random();
   bool _cancelled = false;
+
+  /// Attempts made for the current chunk, so the live log can show that the
+  /// loop really is retrying rather than stuck.
+  int _attempt = 0;
 
   /// Cancel the worker.
   void cancel() => _cancelled = true;
@@ -78,6 +92,7 @@ class AccountWorker {
       final xkms = batchTargets.first.xkms;
       final blockedReason = Xkms.blockedReason(xkms);
       if (blockedReason != null && !debugMode) {
+        _log(GrabLogKind.failure, '批次不可提交：$blockedReason');
         for (final t in batchTargets) {
           onTargetResult(t.id, success: false, message: blockedReason);
         }
@@ -91,6 +106,7 @@ class AccountWorker {
           '[$accountId] Debug mode: submitting to a non-submittable batch '
           '($blockedReason)',
         );
+        _log(GrabLogKind.lifecycle, '调试模式：无视批次状态强制提交', detail: blockedReason);
       }
 
       // Re-fetch batch info for latest zdxk.
@@ -132,11 +148,25 @@ class AccountWorker {
       kmhList: chunk.map((t) => t.kmh).toList(),
     );
 
+    final courseNames = chunk.map((t) => t.courseName).join('、');
+    _attempt = 0;
+
     while (!_cancelled) {
+      _attempt++;
+      _log(
+        GrabLogKind.request,
+        '第 $_attempt 次提交：$courseNames',
+        detail: 'xkid=$xkid xkms=$xkms',
+      );
       try {
         final result = await adapter.submit(command);
 
         if (result.success) {
+          _log(
+            GrabLogKind.success,
+            '选课成功：$courseNames',
+            detail: result.message,
+          );
           for (final t in chunk) {
             onTargetResult(t.id, success: true, message: result.message);
           }
@@ -152,9 +182,15 @@ class AccountWorker {
           '[$accountId] Submit reported failure without an exception: '
           '${result.message} — retrying',
         );
+        _log(GrabLogKind.failure, '提交未确认，将重试', detail: result.message);
       } on Exception catch (e) {
         final decision = RetryClassifier.classify(e);
         _logger.warn('[$accountId] Submit error: $e, decision: $decision');
+        _log(
+          GrabLogKind.failure,
+          '提交被拒绝（${_decisionLabel(decision)}）',
+          detail: _reasonOf(e),
+        );
 
         switch (decision) {
           case RetryDecision.stopTask:
@@ -178,6 +214,30 @@ class AccountWorker {
     return null;
   }
 
+  /// Publish a line to the on-screen live log.
+  void _log(GrabLogKind kind, String message, {String? detail}) {
+    grabLogBus.log(
+      kind,
+      message,
+      accountId: accountId,
+      accountLabel: accountLabel,
+      detail: detail,
+    );
+  }
+
+  /// The user-facing reason behind an exception.
+  ///
+  /// `toString()` on a CampusException prefixes the type, which reads as noise
+  /// next to the school's own Chinese message.
+  static String _reasonOf(Exception e) =>
+      e is AppException ? e.message : e.toString();
+
+  static String _decisionLabel(RetryDecision decision) => switch (decision) {
+    RetryDecision.retry => '继续重试',
+    RetryDecision.skipTarget => '跳过该课程',
+    RetryDecision.stopTask => '终止任务',
+  };
+
   /// Filter out targets that are already selected (idempotency check).
   Future<List<CourseTargetEntry>> _filterAlreadySelected(
     List<CourseTargetEntry> targets,
@@ -197,9 +257,10 @@ class AccountWorker {
 
         for (final target in entry.value) {
           if (selectedKmh.contains(target.kmh)) {
-            _logger.info(
-              '[$accountId] Target ${target.courseName} already selected',
-            );
+            // The log file gets the opaque id; the course name goes only to
+            // the on-screen live log, which is never persisted.
+            _logger.info('[$accountId] Target ${target.id} already selected');
+            _log(GrabLogKind.success, '已选中，跳过：${target.courseName}');
             onTargetResult(target.id, success: true, message: '已选中（幂等检查）');
           } else {
             remaining.add(target);

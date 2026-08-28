@@ -13,6 +13,8 @@ import 'package:nkgrabber/core/logging/app_logger.dart';
 import 'package:nkgrabber/core/utils/constants.dart';
 import 'package:nkgrabber/features/grabber/application/account_worker.dart';
 import 'package:nkgrabber/features/grabber/application/retry_classifier.dart';
+import 'package:nkgrabber/features/grabber/domain/grab_log_bus.dart';
+import 'package:nkgrabber/features/grabber/domain/grab_log_entry.dart';
 import 'package:nkgrabber/features/grabber/domain/grabber_state.dart';
 import 'package:nkgrabber/infrastructure/campus/campus_adapter.dart';
 import 'package:nkgrabber/infrastructure/database/app_database.dart';
@@ -28,6 +30,12 @@ import 'package:uuid/uuid.dart';
 /// reading the stored cookie.
 typedef AdapterResolver = Future<CampusAdapter?> Function(String accountId);
 
+/// Resolves an account's display name for the on-screen live log.
+///
+/// Synchronous and best-effort: a missing label costs a nicer log line, not a
+/// failed run, so the caller returns null rather than hitting the database.
+typedef AccountLabelResolver = String? Function(String accountId);
+
 /// The main grabber engine.
 class GrabberEngine {
   GrabberEngine({
@@ -38,9 +46,11 @@ class GrabberEngine {
     required int minRequestIntervalMs,
     required int userIntervalMs,
     bool debugMode = false,
+    AccountLabelResolver? accountLabels,
   }) : _courseTargetDao = courseTargetDao,
        _grabTaskDao = grabTaskDao,
        _adapterResolver = adapterResolver,
+       _accountLabels = accountLabels,
        _maxConcurrent = maxConcurrentAccounts,
        _debugMode = debugMode,
        _effectiveIntervalMs = max(userIntervalMs, minRequestIntervalMs);
@@ -48,6 +58,9 @@ class GrabberEngine {
   final CourseTargetDao _courseTargetDao;
   final GrabTaskDao _grabTaskDao;
   final AdapterResolver _adapterResolver;
+
+  /// Display name for an account, used only in the on-screen live log.
+  final AccountLabelResolver? _accountLabels;
   final int _maxConcurrent;
 
   /// Lets workers submit against batches the `xkms` gate would refuse.
@@ -77,10 +90,18 @@ class GrabberEngine {
       return;
     }
 
+    // A fresh run starts a fresh log. Keeping the previous run's lines would
+    // make it impossible to tell which attempt a line belongs to.
+    grabLogBus
+      ..reset()
+      ..log(GrabLogKind.lifecycle, '开始抢课：${accountIds.length} 个账号');
+
     _updateState(
-      _state.copyWith(
+      GrabberState(
+        // Built fresh rather than copyWith'd: restarting after a stop must not
+        // inherit the previous run's counters, or the progress bar resumes at
+        // "成功 2/3" for a run that has submitted nothing yet.
         status: GrabberStatus.preparing,
-        clearMessage: true,
         startedAt: DateTime.now().toUtc(),
         activeAccountIds: accountIds,
       ),
@@ -134,6 +155,11 @@ class GrabberEngine {
       final adapter = await _adapterResolver(accountId);
       if (adapter == null) {
         _logger.warn('No adapter for account $accountId');
+        grabLogBus.log(
+          GrabLogKind.failure,
+          '账号登录状态已失效，跳过',
+          accountId: accountId,
+        );
         continue;
       }
 
@@ -142,6 +168,7 @@ class GrabberEngine {
         adapter: adapter,
         effectiveIntervalMs: _effectiveIntervalMs,
         debugMode: _debugMode,
+        accountLabel: _accountLabels?.call(accountId),
         onTargetResult: (targetId, {required bool success, String? message}) {
           if (success) {
             completedTargets.add(targetId);
@@ -222,6 +249,12 @@ class GrabberEngine {
 
     if (_state.status == GrabberStatus.running) {
       _updateState(_state.copyWith(status: finalStatus, message: finalMessage));
+      grabLogBus.log(
+        finalStatus == GrabberStatus.success
+            ? GrabLogKind.success
+            : GrabLogKind.failure,
+        '任务结束：$finalMessage',
+      );
     }
 
     // Finalize task records.
@@ -247,30 +280,27 @@ class GrabberEngine {
   }
 
   /// Stop the grabber.
+  ///
+  /// Stopping is not a dead end: the workers are cancelled and the state goes
+  /// to `stopped`, from which [start] is allowed again. `isRunning` is already
+  /// false there, so no extra reset step is needed — the previous design made
+  /// the user press reset before they could try again, which during an open
+  /// batch is time they do not have.
   void stop() {
     if (!_state.isRunning) return;
 
     _logger.info('Grabber stopped by user');
+    grabLogBus.log(GrabLogKind.lifecycle, '用户已停止');
     for (final worker in _workers.values) {
       worker.cancel();
     }
+    _workers.clear();
     _timeoutTimer?.cancel();
     _timeoutTimer = null;
 
     _updateState(
       _state.copyWith(status: GrabberStatus.stopped, message: '已手动停止'),
     );
-  }
-
-  /// Pause the grabber.
-  void pause() {
-    if (_state.status != GrabberStatus.running) return;
-
-    for (final worker in _workers.values) {
-      worker.cancel();
-    }
-
-    _updateState(_state.copyWith(status: GrabberStatus.paused, message: '已暂停'));
   }
 
   /// Reset to idle state.
@@ -302,6 +332,7 @@ class GrabberEngine {
 
   void _onTimeout() {
     _logger.warn('Grabber reached 30-minute timeout');
+    grabLogBus.log(GrabLogKind.lifecycle, '已达到 30 分钟运行上限，自动停止');
     for (final worker in _workers.values) {
       worker.cancel();
     }

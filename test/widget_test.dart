@@ -12,8 +12,13 @@ import 'package:nkgrabber/core/utils/constants.dart';
 import 'package:nkgrabber/core/utils/extensions.dart';
 import 'package:nkgrabber/features/courses/presentation/course_config_page.dart';
 import 'package:nkgrabber/features/grabber/application/account_worker.dart';
+import 'package:nkgrabber/features/grabber/application/grabber_controller.dart';
+import 'package:nkgrabber/features/grabber/application/grabber_engine.dart';
 import 'package:nkgrabber/features/grabber/application/retry_classifier.dart';
+import 'package:nkgrabber/features/grabber/domain/grab_log_bus.dart';
+import 'package:nkgrabber/features/grabber/domain/grab_log_entry.dart';
 import 'package:nkgrabber/features/grabber/domain/grabber_state.dart';
+import 'package:nkgrabber/features/grabber/presentation/grabber_page.dart';
 import 'package:nkgrabber/infrastructure/campus/campus_adapter.dart';
 import 'package:nkgrabber/infrastructure/campus/clock_sync.dart';
 import 'package:nkgrabber/infrastructure/campus/models/campus_models.dart';
@@ -384,6 +389,114 @@ void main() {
   });
 
   // ═══════════════════════════════════════════════════════════════════════
+  // Stop is restartable
+  // ═══════════════════════════════════════════════════════════════════════
+  group('stop then restart', () {
+    tearDown(grabLogBus.reset);
+
+    /// An engine wired to a recording adapter, so a run can be started and
+    /// stopped without touching the network.
+    Future<(GrabberEngine, AppDatabase, _RecordingAdapter)>
+    buildEngine() async {
+      final db = AppDatabase(NativeDatabase.memory());
+      addTearDown(db.close);
+      await _seedAccount(db);
+      await _seedTarget(db);
+      final adapter = _RecordingAdapter(xkms: '1');
+
+      final engine = GrabberEngine(
+        courseTargetDao: db.courseTargetDao,
+        grabTaskDao: db.grabTaskDao,
+        adapterResolver: (_) async => adapter,
+        maxConcurrentAccounts: 1,
+        minRequestIntervalMs: 1,
+        userIntervalMs: 1,
+      );
+      addTearDown(engine.dispose);
+      return (engine, db, adapter);
+    }
+
+    test('a stopped run can be started again without a reset', () async {
+      final (engine, _, _) = await buildEngine();
+
+      await engine.start(['a1']);
+      expect(engine.state.status, GrabberStatus.success);
+
+      engine.stop();
+
+      // The old flow parked here and required reset() before _IdleView — the
+      // only place with a start button — would render again. Starting has to
+      // work straight from `stopped`.
+      await engine.start(['a1']);
+      expect(
+        engine.state.status,
+        isNot(GrabberStatus.stopped),
+        reason: 'start() from a stopped state must actually run',
+      );
+      expect(engine.state.startedAt, isNotNull);
+    });
+
+    test('a restart does not inherit the previous run counters', () async {
+      final (engine, _, _) = await buildEngine();
+
+      await engine.start(['a1']);
+      expect(engine.state.successCount, 1);
+
+      engine.stop();
+
+      // The counters must already be clear when the run is announced, not
+      // merely by the time it finishes. copyWith'ing the old state left the
+      // progress bar showing "成功 1/1" over a run that had submitted nothing
+      // yet — visible for the whole preparing phase.
+      final announced = <GrabberState>[];
+      final sub = engine.stateStream.listen(announced.add);
+      addTearDown(sub.cancel);
+
+      await engine.start(['a1']);
+
+      final preparing = announced.firstWhere(
+        (s) => s.status == GrabberStatus.preparing,
+      );
+      expect(preparing.successCount, 0);
+      expect(preparing.failedCount, 0);
+      expect(preparing.completedTargets, isEmpty);
+      expect(preparing.message, isNull);
+    });
+
+    test('a run publishes lifecycle and verdict lines to the log', () async {
+      final (engine, _, _) = await buildEngine();
+
+      await engine.start(['a1']);
+
+      final kinds = grabLogBus.entries.map((e) => e.kind).toSet();
+      expect(kinds, contains(GrabLogKind.lifecycle));
+      expect(
+        kinds,
+        contains(GrabLogKind.success),
+        reason:
+            'the verdict comes from the worker; the interceptor only sees '
+            'HTTP 200 either way',
+      );
+    });
+
+    test('starting a new run clears the previous run log', () async {
+      final (engine, _, _) = await buildEngine();
+
+      await engine.start(['a1']);
+      final first = grabLogBus.entries.length;
+      expect(first, greaterThan(0));
+
+      await engine.start(['a1']);
+
+      expect(
+        grabLogBus.entries.first.message,
+        contains('开始抢课'),
+        reason: 'mixing two runs makes it impossible to tell which is which',
+      );
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
   // Retry Classifier
   // ═══════════════════════════════════════════════════════════════════════
   group('RetryClassifier', () {
@@ -656,6 +769,116 @@ void main() {
       await openGrabber(tester);
 
       expect(find.text('尚未就绪'), findsOneWidget);
+    });
+
+    testWidgets('the live log renders entries from the bus', (tester) async {
+      addTearDown(grabLogBus.reset);
+      final db = AppDatabase(NativeDatabase.memory());
+      await _seedAccount(db);
+      await _seedTarget(db);
+      await _pumpApp(tester, database: db);
+      await openGrabber(tester);
+
+      // Drive the page out of idle without a network run: the engine's own
+      // start() would need a live adapter. What is under test is that a bus
+      // entry reaches the screen.
+      grabLogBus.log(GrabLogKind.failure, '提交被拒绝（继续重试）', detail: '该课程人数已满');
+      await tester.pump();
+
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(GrabberPage)),
+      );
+      // Keep the provider alive, then let the stream deliver its first value —
+      // a StreamProvider is AsyncLoading until a microtask has run.
+      final sub = container.listen(grabLogProvider, (_, _) {});
+      addTearDown(sub.close);
+      await tester.pump();
+
+      expect(
+        container.read(grabLogProvider).valueOrNull,
+        isNotNull,
+        reason: 'the log provider must expose the buffered backlog',
+      );
+      expect(
+        container.read(grabLogProvider).valueOrNull!.last.detail,
+        '该课程人数已满',
+        reason: "the server's own message is what the panel exists to show",
+      );
+    });
+    testWidgets('a finished run offers restart, and no pause is offered', (
+      tester,
+    ) async {
+      addTearDown(grabLogBus.reset);
+      final db = AppDatabase(NativeDatabase.memory());
+      await _seedAccount(db);
+      await _seedTarget(db);
+      await _pumpApp(tester, database: db);
+      await openGrabber(tester);
+
+      // A real start: the seeded account has no adapter (none was ever logged
+      // in), so the run ends immediately in a non-idle terminal state — the
+      // same place a user's stop press leaves it. What is under test is the
+      // UI's gating, which previously put a start button only in `idle` and so
+      // forced a separate reset press before the user could try again.
+      await tester.tap(find.text('开始抢课'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('开始抢课'), findsNothing);
+      expect(
+        find.text('重新开始'),
+        findsOneWidget,
+        reason: 'a finished run must not require a reset before trying again',
+      );
+      expect(find.text('暂停'), findsNothing);
+
+      final button = tester.widget<FilledButton>(
+        find.ancestor(
+          of: find.text('重新开始'),
+          matching: find.byType(FilledButton),
+        ),
+      );
+      expect(button.onPressed, isNotNull);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Live grabber log
+  // ═══════════════════════════════════════════════════════════════════════
+
+  group('GrabLogBus', () {
+    tearDown(grabLogBus.reset);
+
+    test('retains a backlog for late subscribers', () {
+      grabLogBus.log(GrabLogKind.request, '→ POST /a');
+
+      // The grabber page is built after a run starts, so a stream with no
+      // replay would show an empty panel over a run already in flight.
+      expect(grabLogBus.entries.single.message, '→ POST /a');
+    });
+
+    test('caps the buffer so a long run cannot grow without bound', () {
+      for (var i = 0; i < 600; i++) {
+        grabLogBus.log(GrabLogKind.request, 'line $i');
+      }
+
+      expect(grabLogBus.entries.length, lessThanOrEqualTo(500));
+      expect(
+        grabLogBus.entries.last.message,
+        'line 599',
+        reason: 'the tail is what the user reads; the head is what is dropped',
+      );
+    });
+
+    test('timestamps carry milliseconds', () {
+      // Without ms two submits one interval apart are indistinguishable, and
+      // the panel cannot show that the retry loop is actually cycling.
+      final entry = GrabLogEntry(
+        at: DateTime(2026, 8, 28, 9, 5, 3, 42),
+        kind: GrabLogKind.request,
+        message: 'x',
+      );
+
+      expect(entry.timestamp, '09:05:03.042');
     });
   });
 

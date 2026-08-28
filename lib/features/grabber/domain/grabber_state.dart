@@ -18,6 +18,13 @@ enum GrabberStatus {
   success,
 
   /// User-initiated pause.
+  ///
+  /// No longer produced: pause cancelled the workers exactly as stop did, but
+  /// parked the state here — neither running nor terminal — so the UI offered
+  /// neither stop nor reset and the run could not be recovered. Stopping is
+  /// now directly restartable instead. The value is retained because it is
+  /// part of the persisted `GrabTaskStatus` mapping and older task rows may
+  /// still carry it.
   paused,
 
   /// User-initiated stop or 30-minute timeout.

@@ -4,12 +4,17 @@
 /// Ensures no cross-account cookie leakage.
 library;
 
+import 'dart:typed_data';
+
 import 'package:cookie_jar/cookie_jar.dart';
 import 'package:dio/dio.dart';
 import 'package:dio_cookie_manager/dio_cookie_manager.dart';
 import 'package:nkgrabber/core/logging/app_logger.dart';
 import 'package:nkgrabber/core/logging/log_sanitizer.dart';
 import 'package:nkgrabber/core/utils/constants.dart';
+import 'package:nkgrabber/features/grabber/domain/grab_log_bus.dart';
+import 'package:nkgrabber/features/grabber/domain/grab_log_entry.dart';
+import 'package:nkgrabber/infrastructure/campus/encoding/gbk_codec.dart';
 
 /// An isolated HTTP client for a single campus account.
 class CampusClient {
@@ -86,15 +91,35 @@ class CampusClient {
 }
 
 /// Logging interceptor for campus requests (per-account).
+///
+/// Writes to two places with different rules:
+///
+/// * `AppLogger` — the log file. Path and status only, as before.
+/// * [grabLogBus] — the on-screen live log, which additionally carries the
+///   request body and a response excerpt, because "what did we send and what
+///   came back" is the whole point of that panel. Both go through
+///   [LogSanitizer] first: the login body contains an RSA-encrypted password
+///   and the response headers carry cookies.
 class _CampusLoggingInterceptor extends Interceptor {
   _CampusLoggingInterceptor(this._accountId);
 
   final String _accountId;
   final _logger = AppLogger('Campus');
 
+  /// Longest response excerpt shown in the live log. Enough for the whole
+  /// envelope of a normal reply; an HTML error page gets cut off, which is
+  /// itself the useful signal.
+  static const _maxBodyChars = 600;
+
   @override
   void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
     _logger.debug('[$_accountId] → ${options.method} ${options.path}');
+    grabLogBus.log(
+      GrabLogKind.request,
+      '→ ${options.method} ${options.path}',
+      accountId: _accountId,
+      detail: _excerpt(options.data),
+    );
     handler.next(options);
   }
 
@@ -106,6 +131,15 @@ class _CampusLoggingInterceptor extends Interceptor {
     _logger.debug(
       '[$_accountId] ← ${response.statusCode} '
       '${response.requestOptions.path}',
+    );
+    grabLogBus.log(
+      GrabLogKind.response,
+      '← ${response.statusCode} ${response.requestOptions.path}',
+      accountId: _accountId,
+      // Responses are ResponseType.bytes (GBK is decoded downstream), so a
+      // raw byte list would render as "[123, 34, ...]". Decode leniently —
+      // this is a preview, and a malformed byte must not throw here.
+      detail: _excerpt(_decodePreview(response.data)),
     );
     handler.next(response);
   }
@@ -119,6 +153,35 @@ class _CampusLoggingInterceptor extends Interceptor {
       '[$_accountId] ✗ ${err.response?.statusCode ?? 'N/A'} '
       '$sanitizedUrl: ${err.message ?? 'unknown error'}',
     );
+    grabLogBus.log(
+      GrabLogKind.failure,
+      '✗ ${err.response?.statusCode ?? '网络错误'} '
+      '${err.requestOptions.path}',
+      accountId: _accountId,
+      detail: LogSanitizer.sanitize(err.message ?? err.type.name),
+    );
     handler.next(err);
+  }
+
+  /// GBK/UTF-8 tolerant preview of a byte body.
+  String? _decodePreview(Object? data) {
+    if (data is! List<int>) return data?.toString();
+    final head = data.length > _maxBodyChars
+        ? data.sublist(0, _maxBodyChars)
+        : data;
+    try {
+      return decodeGbk(Uint8List.fromList(head));
+    } on Object {
+      return String.fromCharCodes(head.where((b) => b >= 0x20 && b < 0x7f));
+    }
+  }
+
+  String? _excerpt(Object? data) {
+    if (data == null) return null;
+    final text = LogSanitizer.sanitize(data.toString());
+    if (text.isEmpty) return null;
+    return text.length > _maxBodyChars
+        ? '${text.substring(0, _maxBodyChars)}…'
+        : text;
   }
 }

@@ -263,9 +263,13 @@ void main() {
       // For a submit it means "we do not understand this response". Calling it
       // success is what reported 抢课成功 for a course never granted.
       expect(
-        () => unwrapCampusCommand({
-          'result': {'msg': 'ok'},
-        }, what: '提交选课', requireCode: true),
+        () => unwrapCampusCommand(
+          {
+            'result': {'msg': 'ok'},
+          },
+          what: '提交选课',
+          requireCode: true,
+        ),
         throwsA(
           isA<CampusException>()
               .having((e) => e.message, 'message', contains('无法确认结果'))
@@ -680,9 +684,9 @@ void main() {
     Future<SubmitResult> submit() {
       final client = CampusClient(accountId: 'test', baseUrl: origin);
       addTearDown(client.dispose);
-      return CampusAdapterImpl(client: client).submit(
-        const SubmitSelection(xkid: 'B1', xkms: '1', kmhList: ['C1']),
-      );
+      return CampusAdapterImpl(
+        client: client,
+      ).submit(const SubmitSelection(xkid: 'B1', xkms: '1', kmhList: ['C1']));
     }
 
     test('code "0" is the only thing that reports success', () async {
@@ -719,8 +723,7 @@ void main() {
     });
 
     test('a full course reported via result.code retries', () async {
-      responseBody =
-          '{"result":{"code":"-1","msg":"该课程人数已满"},"status":200}';
+      responseBody = '{"result":{"code":"-1","msg":"该课程人数已满"},"status":200}';
 
       await expectLater(
         submit(),
@@ -734,24 +737,27 @@ void main() {
       );
     });
 
-    test('a full course reported via the envelope error also retries', () async {
-      // The school signals refusals both ways. Only result.code went through
-      // the message mapper, so this arrived typed as parameterError and the
-      // classifier abandoned the target instead of retrying it.
-      responseBody =
-          '{"error":{"code":"-32000","message":"该课程人数已满"},"status":200}';
+    test(
+      'a full course reported via the envelope error also retries',
+      () async {
+        // The school signals refusals both ways. Only result.code went through
+        // the message mapper, so this arrived typed as parameterError and the
+        // classifier abandoned the target instead of retrying it.
+        responseBody =
+            '{"error":{"code":"-32000","message":"该课程人数已满"},"status":200}';
 
-      await expectLater(
-        submit(),
-        throwsA(
-          isA<CampusException>().having(
-            (e) => e.type,
-            'type',
-            CampusExceptionType.courseFull,
+        await expectLater(
+          submit(),
+          throwsA(
+            isA<CampusException>().having(
+              (e) => e.type,
+              'type',
+              CampusExceptionType.courseFull,
+            ),
           ),
-        ),
-      );
-    });
+        );
+      },
+    );
 
     test('courseFull is a retry, so the worker keeps trying', () {
       // Ties the classification above to the observable behaviour the user

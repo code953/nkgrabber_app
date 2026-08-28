@@ -9,6 +9,8 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nkgrabber/features/accounts/application/accounts_notifier.dart';
 import 'package:nkgrabber/features/grabber/application/grabber_engine.dart';
+import 'package:nkgrabber/features/grabber/domain/grab_log_bus.dart';
+import 'package:nkgrabber/features/grabber/domain/grab_log_entry.dart';
 import 'package:nkgrabber/features/grabber/domain/grabber_state.dart';
 import 'package:nkgrabber/infrastructure/providers.dart';
 
@@ -33,9 +35,28 @@ final grabberProvider = StateNotifierProvider<GrabberController, GrabberState>((
     minRequestIntervalMs: settings?.minRequestIntervalMs ?? 800,
     userIntervalMs: settings?.userIntervalMs ?? 1000,
     debugMode: settings?.debugModeEnabled ?? false,
+    // Read, not watch: a label is cosmetic, and re-watching the account list
+    // would rebuild the engine mid-run every time an account row changed.
+    accountLabels: (id) => ref
+        .read(accountsProvider)
+        .accounts
+        .where((a) => a.id == id)
+        .map((a) => a.displayName)
+        .firstOrNull,
   );
 
   return GrabberController(engine);
+});
+
+/// The live request/response log, newest last.
+///
+/// Seeded with the buffered backlog because the grabber page is usually built
+/// after a run has already produced lines.
+final grabLogProvider = StreamProvider<List<GrabLogEntry>>((ref) async* {
+  yield grabLogBus.entries;
+  await for (final _ in grabLogBus.stream) {
+    yield grabLogBus.entries;
+  }
 });
 
 /// Mirrors [GrabberEngine.stateStream] into Riverpod and forwards commands.
@@ -50,11 +71,9 @@ class GrabberController extends StateNotifier<GrabberState> {
   /// Start grabbing for the given accounts.
   Future<void> start(List<String> accountIds) => _engine.start(accountIds);
 
-  /// Stop the current task.
+  /// Stop the current task. The state becomes `stopped`, from which
+  /// [start] may be called again without a reset.
   void stop() => _engine.stop();
-
-  /// Pause the current task.
-  void pause() => _engine.pause();
 
   /// Return to the idle state so a new task can be started.
   void reset() => _engine.reset();

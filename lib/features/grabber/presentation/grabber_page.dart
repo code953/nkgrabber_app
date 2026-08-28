@@ -1,13 +1,14 @@
 /// Grabber control page.
 ///
-/// Shows the current grabber state, provides start/stop/pause controls,
-/// and displays real-time progress of course selection.
+/// Shows the current grabber state, a stop control, the live request/response
+/// log, and real-time progress of course selection.
 library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nkgrabber/features/accounts/application/accounts_notifier.dart';
 import 'package:nkgrabber/features/grabber/application/grabber_controller.dart';
+import 'package:nkgrabber/features/grabber/domain/grab_log_entry.dart';
 import 'package:nkgrabber/features/grabber/domain/grabber_state.dart';
 import 'package:nkgrabber/infrastructure/providers.dart';
 
@@ -39,29 +40,22 @@ class GrabberPage extends ConsumerWidget {
         ref.watch(appSettingsProvider).valueOrNull?.debugModeEnabled ?? false;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('抢课'),
-        actions: [
-          if (state.isTerminal)
-            IconButton(
-              icon: const Icon(Icons.refresh),
-              tooltip: '重置',
-              onPressed: ref.read(grabberProvider.notifier).reset,
-            ),
-        ],
-      ),
+      appBar: AppBar(title: const Text('抢课')),
       body: Column(
         children: [
           if (debugMode) const _DebugModeBanner(),
-          Expanded(
-            child: state.status == GrabberStatus.idle
-                ? const _IdleView()
-                : GrabberProgressView(
-                    state: state,
-                    onStop: ref.read(grabberProvider.notifier).stop,
-                    onPause: ref.read(grabberProvider.notifier).pause,
-                  ),
-          ),
+          // Only the very first, never-run state gets the big empty view.
+          // Everything else — running, stopped, finished — keeps the log on
+          // screen and offers a restart, because stopping is not a dead end
+          // and a separate reset press costs time during an open batch.
+          if (state.status == GrabberStatus.idle)
+            const Expanded(child: _IdleView())
+          else ...[
+            _RunSummary(state: state),
+            const Divider(height: 1),
+            const Expanded(child: _LiveLogView()),
+            _RunControls(state: state),
+          ],
         ],
       ),
     );
@@ -152,73 +146,215 @@ class _IdleView extends ConsumerWidget {
   }
 }
 
-/// Running state progress view.
-class GrabberProgressView extends StatelessWidget {
-  const GrabberProgressView({
-    required this.state,
-    this.onStop,
-    this.onPause,
-    super.key,
-  });
+/// Status, progress bar and counters, shown above the live log.
+class _RunSummary extends StatelessWidget {
+  const _RunSummary({required this.state});
 
   final GrabberState state;
-  final VoidCallback? onStop;
-  final VoidCallback? onPause;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.fromLTRB(24, 20, 24, 16),
       child: Column(
         children: [
           _StatusHeader(state: state),
-          const SizedBox(height: 24),
+          const SizedBox(height: 16),
           LinearProgressIndicator(
             value: state.totalTargets > 0
                 ? (state.successCount + state.failedCount) / state.totalTargets
                 : null,
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           Text(
             '成功: ${state.successCount} / '
             '失败: ${state.failedCount} / '
             '总计: ${state.totalTargets}',
           ),
           if (state.message != null) ...[
-            const SizedBox(height: 12),
+            const SizedBox(height: 8),
             Text(
               state.message!,
               textAlign: TextAlign.center,
               style: TextStyle(color: Theme.of(context).colorScheme.outline),
             ),
           ],
-          const Spacer(),
-          // Terminal states have nothing left to stop or pause; the app bar
-          // offers a reset instead.
-          if (!state.isTerminal)
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
+        ],
+      ),
+    );
+  }
+}
+
+/// Live request/response log.
+///
+/// The counters above answer "how many"; this answers "what did we send and
+/// what did the school say" — which is the only way to tell a course that is
+/// genuinely full from a client that is misreading the response.
+class _LiveLogView extends ConsumerStatefulWidget {
+  const _LiveLogView();
+
+  @override
+  ConsumerState<_LiveLogView> createState() => _LiveLogViewState();
+}
+
+class _LiveLogViewState extends ConsumerState<_LiveLogView> {
+  final _controller = ScrollController();
+
+  /// Follow the tail until the user scrolls up, then leave their position
+  /// alone — auto-scrolling out from under someone reading an error is worse
+  /// than making them scroll back down.
+  bool _follow = true;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (!_controller.hasClients) return;
+    final atBottom =
+        _controller.offset >= _controller.position.maxScrollExtent - 40;
+    if (atBottom != _follow) setState(() => _follow = atBottom);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final entries = ref.watch(grabLogProvider).valueOrNull ?? const [];
+
+    if (_follow) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_controller.hasClients && _follow) {
+          _controller.jumpTo(_controller.position.maxScrollExtent);
+        }
+      });
+    }
+
+    if (entries.isEmpty) {
+      return Center(
+        child: Text(
+          '等待请求…',
+          style: TextStyle(color: Theme.of(context).colorScheme.outline),
+        ),
+      );
+    }
+
+    return NotificationListener<ScrollNotification>(
+      onNotification: (_) {
+        _onScroll();
+        return false;
+      },
+      child: ListView.builder(
+        controller: _controller,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        itemCount: entries.length,
+        itemBuilder: (context, i) => _LogTile(entry: entries[i]),
+      ),
+    );
+  }
+}
+
+class _LogTile extends StatelessWidget {
+  const _LogTile({required this.entry});
+
+  final GrabLogEntry entry;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final (icon, color) = switch (entry.kind) {
+      GrabLogKind.request => (Icons.north_east, scheme.primary),
+      GrabLogKind.response => (Icons.south_west, scheme.outline),
+      GrabLogKind.success => (Icons.check_circle_outline, Colors.green),
+      GrabLogKind.failure => (Icons.error_outline, scheme.error),
+      GrabLogKind.lifecycle => (Icons.flag_outlined, scheme.tertiary),
+    };
+
+    final mono = Theme.of(
+      context,
+    ).textTheme.bodySmall?.copyWith(fontFamily: 'monospace');
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Icon(icon, size: 14, color: color),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (state.status == GrabberStatus.running) ...[
-                  OutlinedButton.icon(
-                    onPressed: onPause,
-                    icon: const Icon(Icons.pause),
-                    label: const Text('暂停'),
-                  ),
-                  const SizedBox(width: 16),
-                ],
-                FilledButton.icon(
-                  onPressed: onStop,
-                  icon: const Icon(Icons.stop),
-                  label: const Text('停止'),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: Theme.of(context).colorScheme.error,
-                  ),
+                Row(
+                  children: [
+                    Text(
+                      entry.timestamp,
+                      style: mono?.copyWith(color: scheme.outline),
+                    ),
+                    if (entry.accountLabel != null) ...[
+                      const SizedBox(width: 8),
+                      Text(
+                        entry.accountLabel!,
+                        style: mono?.copyWith(color: scheme.outline),
+                      ),
+                    ],
+                  ],
                 ),
+                Text(entry.message, style: mono?.copyWith(color: color)),
+                if (entry.detail != null)
+                  Text(
+                    entry.detail!,
+                    style: mono?.copyWith(color: scheme.outline),
+                  ),
               ],
             ),
-          const SizedBox(height: 24),
+          ),
         ],
+      ),
+    );
+  }
+}
+
+/// The single control shown during and after a run.
+///
+/// While running there is only 停止 — pause was removed because it cancelled
+/// the workers exactly like stop did, but parked the state in `paused`, which
+/// is neither running nor terminal, so neither stop nor reset was offered and
+/// the run could not be recovered.
+class _RunControls extends ConsumerWidget {
+  const _RunControls({required this.state});
+
+  final GrabberState state;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final grabbable = ref.watch(grabbableAccountsProvider);
+    final ids = grabbable.valueOrNull ?? const <String>[];
+
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(24, 12, 24, 20),
+        child: state.isRunning
+            ? FilledButton.icon(
+                onPressed: ref.read(grabberProvider.notifier).stop,
+                icon: const Icon(Icons.stop),
+                label: const Text('停止'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: Theme.of(context).colorScheme.error,
+                ),
+              )
+            : FilledButton.icon(
+                // Restart straight from a stopped run — no reset step.
+                onPressed: ids.isEmpty
+                    ? null
+                    : () => ref.read(grabberProvider.notifier).start(ids),
+                icon: const Icon(Icons.play_arrow),
+                label: const Text('重新开始'),
+              ),
       ),
     );
   }
