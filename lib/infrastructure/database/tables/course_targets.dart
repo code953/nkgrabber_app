@@ -19,8 +19,14 @@ class CourseTargets extends Table {
   /// 选课批次 ID from campus system.
   TextColumn get xkid => text()();
 
-  /// 选课模式: "1"=抢选, "2"=正选, "3"=补退选.
+  /// 选课模式: "0"=选课, "1"=抢选, "2"=正选, "3"=补退选.
   TextColumn get xkms => text()();
+
+  /// 单次提交最多可选门数，配课时从批次快照下来。
+  ///
+  /// 抢课路径不再回头调 `getStudentXkList` 取这个值：开抢瞬间的一次往返换来的
+  /// 是一个几乎不会变的批次配置字段。默认 1，即最保守的每次一门。
+  IntColumn get zdxk => integer().withDefault(const Constant(1))();
 
   /// 课目号 — the real course number used for submission.
   TextColumn get kmh => text()();

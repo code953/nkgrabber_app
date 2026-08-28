@@ -4,11 +4,16 @@
 /// log, and real-time progress of course selection.
 library;
 
+import 'dart:convert';
+
+import 'package:file_saver/file_saver.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nkgrabber/features/accounts/application/accounts_notifier.dart';
 import 'package:nkgrabber/features/grabber/application/grabber_controller.dart';
 import 'package:nkgrabber/features/grabber/domain/grab_log_entry.dart';
+import 'package:nkgrabber/features/grabber/domain/grab_log_export.dart';
 import 'package:nkgrabber/features/grabber/domain/grabber_state.dart';
 import 'package:nkgrabber/infrastructure/providers.dart';
 
@@ -40,7 +45,10 @@ class GrabberPage extends ConsumerWidget {
         ref.watch(appSettingsProvider).valueOrNull?.debugModeEnabled ?? false;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('抢课')),
+      appBar: AppBar(
+        title: const Text('抢课'),
+        actions: const [_ExportLogButton()],
+      ),
       body: Column(
         children: [
           if (debugMode) const _DebugModeBanner(),
@@ -61,6 +69,67 @@ class GrabberPage extends ConsumerWidget {
     );
   }
 }
+
+/// Exports the on-screen log to the clipboard or a file.
+///
+/// Neither destination is sanitized, and neither touches the log file — see
+/// `grab_log_export.dart` for why that is the intended boundary.
+class _ExportLogButton extends ConsumerWidget {
+  const _ExportLogButton();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final entries = ref.watch(grabLogProvider).valueOrNull ?? const [];
+
+    return PopupMenuButton<_ExportTarget>(
+      icon: const Icon(Icons.ios_share),
+      tooltip: '导出日志',
+      // Disabled rather than hidden: a user who has been told the button
+      // exists should see why it does nothing, not wonder where it went.
+      enabled: entries.isNotEmpty,
+      onSelected: (target) => _export(context, target, entries),
+      itemBuilder: (context) => const [
+        PopupMenuItem(value: _ExportTarget.clipboard, child: Text('复制到剪贴板')),
+        PopupMenuItem(value: _ExportTarget.file, child: Text('保存为文件')),
+      ],
+    );
+  }
+
+  Future<void> _export(
+    BuildContext context,
+    _ExportTarget target,
+    List<GrabLogEntry> entries,
+  ) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final text = formatGrabLog(entries);
+
+    String message;
+    try {
+      switch (target) {
+        case _ExportTarget.clipboard:
+          await Clipboard.setData(ClipboardData(text: text));
+          message = '已复制 ${entries.length} 条日志';
+        case _ExportTarget.file:
+          await FileSaver.instance.saveAs(
+            name: grabLogFileName(DateTime.now()),
+            bytes: Uint8List.fromList(utf8.encode(text)),
+            fileExtension: 'txt',
+            mimeType: MimeType.text,
+          );
+          message = '已保存 ${entries.length} 条日志';
+      }
+    } on Exception catch (e) {
+      // Saving can fail for reasons outside our control (cancelled dialog,
+      // no write permission). Say so rather than leaving the user unsure
+      // whether the export happened.
+      message = '导出失败：$e';
+    }
+
+    messenger.showSnackBar(SnackBar(content: Text(message)));
+  }
+}
+
+enum _ExportTarget { clipboard, file }
 
 /// Persistent reminder that the `xkms` gate is off.
 ///

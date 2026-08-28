@@ -872,6 +872,16 @@ class $CourseTargetsTable extends CourseTargets
     type: DriftSqlType.string,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _zdxkMeta = const VerificationMeta('zdxk');
+  @override
+  late final GeneratedColumn<int> zdxk = GeneratedColumn<int>(
+    'zdxk',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(1),
+  );
   static const VerificationMeta _kmhMeta = const VerificationMeta('kmh');
   @override
   late final GeneratedColumn<String> kmh = GeneratedColumn<String>(
@@ -956,6 +966,7 @@ class $CourseTargetsTable extends CourseTargets
     accountId,
     xkid,
     xkms,
+    zdxk,
     kmh,
     xbkid,
     batchName,
@@ -1004,6 +1015,12 @@ class $CourseTargetsTable extends CourseTargets
       );
     } else if (isInserting) {
       context.missing(_xkmsMeta);
+    }
+    if (data.containsKey('zdxk')) {
+      context.handle(
+        _zdxkMeta,
+        zdxk.isAcceptableOrUnknown(data['zdxk']!, _zdxkMeta),
+      );
     }
     if (data.containsKey('kmh')) {
       context.handle(
@@ -1080,6 +1097,10 @@ class $CourseTargetsTable extends CourseTargets
         DriftSqlType.string,
         data['${effectivePrefix}xkms'],
       )!,
+      zdxk: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}zdxk'],
+      )!,
       kmh: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}kmh'],
@@ -1128,8 +1149,14 @@ class CourseTargetEntry extends DataClass
   /// 选课批次 ID from campus system.
   final String xkid;
 
-  /// 选课模式: "1"=抢选, "2"=正选, "3"=补退选.
+  /// 选课模式: "0"=选课, "1"=抢选, "2"=正选, "3"=补退选.
   final String xkms;
+
+  /// 单次提交最多可选门数，配课时从批次快照下来。
+  ///
+  /// 抢课路径不再回头调 `getStudentXkList` 取这个值：开抢瞬间的一次往返换来的
+  /// 是一个几乎不会变的批次配置字段。默认 1，即最保守的每次一门。
+  final int zdxk;
 
   /// 课目号 — the real course number used for submission.
   final String kmh;
@@ -1156,6 +1183,7 @@ class CourseTargetEntry extends DataClass
     required this.accountId,
     required this.xkid,
     required this.xkms,
+    required this.zdxk,
     required this.kmh,
     this.xbkid,
     required this.batchName,
@@ -1171,6 +1199,7 @@ class CourseTargetEntry extends DataClass
     map['account_id'] = Variable<String>(accountId);
     map['xkid'] = Variable<String>(xkid);
     map['xkms'] = Variable<String>(xkms);
+    map['zdxk'] = Variable<int>(zdxk);
     map['kmh'] = Variable<String>(kmh);
     if (!nullToAbsent || xbkid != null) {
       map['xbkid'] = Variable<String>(xbkid);
@@ -1189,6 +1218,7 @@ class CourseTargetEntry extends DataClass
       accountId: Value(accountId),
       xkid: Value(xkid),
       xkms: Value(xkms),
+      zdxk: Value(zdxk),
       kmh: Value(kmh),
       xbkid: xbkid == null && nullToAbsent
           ? const Value.absent()
@@ -1211,6 +1241,7 @@ class CourseTargetEntry extends DataClass
       accountId: serializer.fromJson<String>(json['accountId']),
       xkid: serializer.fromJson<String>(json['xkid']),
       xkms: serializer.fromJson<String>(json['xkms']),
+      zdxk: serializer.fromJson<int>(json['zdxk']),
       kmh: serializer.fromJson<String>(json['kmh']),
       xbkid: serializer.fromJson<String?>(json['xbkid']),
       batchName: serializer.fromJson<String>(json['batchName']),
@@ -1228,6 +1259,7 @@ class CourseTargetEntry extends DataClass
       'accountId': serializer.toJson<String>(accountId),
       'xkid': serializer.toJson<String>(xkid),
       'xkms': serializer.toJson<String>(xkms),
+      'zdxk': serializer.toJson<int>(zdxk),
       'kmh': serializer.toJson<String>(kmh),
       'xbkid': serializer.toJson<String?>(xbkid),
       'batchName': serializer.toJson<String>(batchName),
@@ -1243,6 +1275,7 @@ class CourseTargetEntry extends DataClass
     String? accountId,
     String? xkid,
     String? xkms,
+    int? zdxk,
     String? kmh,
     Value<String?> xbkid = const Value.absent(),
     String? batchName,
@@ -1255,6 +1288,7 @@ class CourseTargetEntry extends DataClass
     accountId: accountId ?? this.accountId,
     xkid: xkid ?? this.xkid,
     xkms: xkms ?? this.xkms,
+    zdxk: zdxk ?? this.zdxk,
     kmh: kmh ?? this.kmh,
     xbkid: xbkid.present ? xbkid.value : this.xbkid,
     batchName: batchName ?? this.batchName,
@@ -1269,6 +1303,7 @@ class CourseTargetEntry extends DataClass
       accountId: data.accountId.present ? data.accountId.value : this.accountId,
       xkid: data.xkid.present ? data.xkid.value : this.xkid,
       xkms: data.xkms.present ? data.xkms.value : this.xkms,
+      zdxk: data.zdxk.present ? data.zdxk.value : this.zdxk,
       kmh: data.kmh.present ? data.kmh.value : this.kmh,
       xbkid: data.xbkid.present ? data.xbkid.value : this.xbkid,
       batchName: data.batchName.present ? data.batchName.value : this.batchName,
@@ -1290,6 +1325,7 @@ class CourseTargetEntry extends DataClass
           ..write('accountId: $accountId, ')
           ..write('xkid: $xkid, ')
           ..write('xkms: $xkms, ')
+          ..write('zdxk: $zdxk, ')
           ..write('kmh: $kmh, ')
           ..write('xbkid: $xbkid, ')
           ..write('batchName: $batchName, ')
@@ -1307,6 +1343,7 @@ class CourseTargetEntry extends DataClass
     accountId,
     xkid,
     xkms,
+    zdxk,
     kmh,
     xbkid,
     batchName,
@@ -1323,6 +1360,7 @@ class CourseTargetEntry extends DataClass
           other.accountId == this.accountId &&
           other.xkid == this.xkid &&
           other.xkms == this.xkms &&
+          other.zdxk == this.zdxk &&
           other.kmh == this.kmh &&
           other.xbkid == this.xbkid &&
           other.batchName == this.batchName &&
@@ -1337,6 +1375,7 @@ class CourseTargetsCompanion extends UpdateCompanion<CourseTargetEntry> {
   final Value<String> accountId;
   final Value<String> xkid;
   final Value<String> xkms;
+  final Value<int> zdxk;
   final Value<String> kmh;
   final Value<String?> xbkid;
   final Value<String> batchName;
@@ -1350,6 +1389,7 @@ class CourseTargetsCompanion extends UpdateCompanion<CourseTargetEntry> {
     this.accountId = const Value.absent(),
     this.xkid = const Value.absent(),
     this.xkms = const Value.absent(),
+    this.zdxk = const Value.absent(),
     this.kmh = const Value.absent(),
     this.xbkid = const Value.absent(),
     this.batchName = const Value.absent(),
@@ -1364,6 +1404,7 @@ class CourseTargetsCompanion extends UpdateCompanion<CourseTargetEntry> {
     required String accountId,
     required String xkid,
     required String xkms,
+    this.zdxk = const Value.absent(),
     required String kmh,
     this.xbkid = const Value.absent(),
     required String batchName,
@@ -1385,6 +1426,7 @@ class CourseTargetsCompanion extends UpdateCompanion<CourseTargetEntry> {
     Expression<String>? accountId,
     Expression<String>? xkid,
     Expression<String>? xkms,
+    Expression<int>? zdxk,
     Expression<String>? kmh,
     Expression<String>? xbkid,
     Expression<String>? batchName,
@@ -1399,6 +1441,7 @@ class CourseTargetsCompanion extends UpdateCompanion<CourseTargetEntry> {
       if (accountId != null) 'account_id': accountId,
       if (xkid != null) 'xkid': xkid,
       if (xkms != null) 'xkms': xkms,
+      if (zdxk != null) 'zdxk': zdxk,
       if (kmh != null) 'kmh': kmh,
       if (xbkid != null) 'xbkid': xbkid,
       if (batchName != null) 'batch_name': batchName,
@@ -1415,6 +1458,7 @@ class CourseTargetsCompanion extends UpdateCompanion<CourseTargetEntry> {
     Value<String>? accountId,
     Value<String>? xkid,
     Value<String>? xkms,
+    Value<int>? zdxk,
     Value<String>? kmh,
     Value<String?>? xbkid,
     Value<String>? batchName,
@@ -1429,6 +1473,7 @@ class CourseTargetsCompanion extends UpdateCompanion<CourseTargetEntry> {
       accountId: accountId ?? this.accountId,
       xkid: xkid ?? this.xkid,
       xkms: xkms ?? this.xkms,
+      zdxk: zdxk ?? this.zdxk,
       kmh: kmh ?? this.kmh,
       xbkid: xbkid ?? this.xbkid,
       batchName: batchName ?? this.batchName,
@@ -1454,6 +1499,9 @@ class CourseTargetsCompanion extends UpdateCompanion<CourseTargetEntry> {
     }
     if (xkms.present) {
       map['xkms'] = Variable<String>(xkms.value);
+    }
+    if (zdxk.present) {
+      map['zdxk'] = Variable<int>(zdxk.value);
     }
     if (kmh.present) {
       map['kmh'] = Variable<String>(kmh.value);
@@ -1489,6 +1537,7 @@ class CourseTargetsCompanion extends UpdateCompanion<CourseTargetEntry> {
           ..write('accountId: $accountId, ')
           ..write('xkid: $xkid, ')
           ..write('xkms: $xkms, ')
+          ..write('zdxk: $zdxk, ')
           ..write('kmh: $kmh, ')
           ..write('xbkid: $xbkid, ')
           ..write('batchName: $batchName, ')
@@ -3261,6 +3310,7 @@ typedef $$CourseTargetsTableCreateCompanionBuilder =
       required String accountId,
       required String xkid,
       required String xkms,
+      Value<int> zdxk,
       required String kmh,
       Value<String?> xbkid,
       required String batchName,
@@ -3276,6 +3326,7 @@ typedef $$CourseTargetsTableUpdateCompanionBuilder =
       Value<String> accountId,
       Value<String> xkid,
       Value<String> xkms,
+      Value<int> zdxk,
       Value<String> kmh,
       Value<String?> xbkid,
       Value<String> batchName,
@@ -3336,6 +3387,11 @@ class $$CourseTargetsTableFilterComposer
 
   ColumnFilters<String> get xkms => $composableBuilder(
     column: $table.xkms,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get zdxk => $composableBuilder(
+    column: $table.zdxk,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -3422,6 +3478,11 @@ class $$CourseTargetsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get zdxk => $composableBuilder(
+    column: $table.zdxk,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get kmh => $composableBuilder(
     column: $table.kmh,
     builder: (column) => ColumnOrderings(column),
@@ -3498,6 +3559,9 @@ class $$CourseTargetsTableAnnotationComposer
 
   GeneratedColumn<String> get xkms =>
       $composableBuilder(column: $table.xkms, builder: (column) => column);
+
+  GeneratedColumn<int> get zdxk =>
+      $composableBuilder(column: $table.zdxk, builder: (column) => column);
 
   GeneratedColumn<String> get kmh =>
       $composableBuilder(column: $table.kmh, builder: (column) => column);
@@ -3580,6 +3644,7 @@ class $$CourseTargetsTableTableManager
                 Value<String> accountId = const Value.absent(),
                 Value<String> xkid = const Value.absent(),
                 Value<String> xkms = const Value.absent(),
+                Value<int> zdxk = const Value.absent(),
                 Value<String> kmh = const Value.absent(),
                 Value<String?> xbkid = const Value.absent(),
                 Value<String> batchName = const Value.absent(),
@@ -3593,6 +3658,7 @@ class $$CourseTargetsTableTableManager
                 accountId: accountId,
                 xkid: xkid,
                 xkms: xkms,
+                zdxk: zdxk,
                 kmh: kmh,
                 xbkid: xbkid,
                 batchName: batchName,
@@ -3608,6 +3674,7 @@ class $$CourseTargetsTableTableManager
                 required String accountId,
                 required String xkid,
                 required String xkms,
+                Value<int> zdxk = const Value.absent(),
                 required String kmh,
                 Value<String?> xbkid = const Value.absent(),
                 required String batchName,
@@ -3621,6 +3688,7 @@ class $$CourseTargetsTableTableManager
                 accountId: accountId,
                 xkid: xkid,
                 xkms: xkms,
+                zdxk: zdxk,
                 kmh: kmh,
                 xbkid: xbkid,
                 batchName: batchName,

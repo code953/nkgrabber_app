@@ -104,8 +104,12 @@ Every page reads its data through providers; there are no stubs left.
 - **Per-account isolation**: each campus account gets its own `Dio` + in-memory `CookieJar`. Cookies never touch disk. `AccountsNotifier` owns these clients and disposes them on account removal, failed login, and its own disposal.
 - **Secure storage only**: passwords and cookies live in platform secure storage (Android Keystore / iOS Keychain / Windows DPAPI / Linux Secret Service). Drift only stores reference keys.
 - **Log sanitization**: all log output passes through `LogSanitizer` before emission. Passwords, cookies, Bearer tokens, activation codes, `deviceToken`, `licenseCode` are replaced with `[REDACTED]`. The last three patterns are kept even though the online business is gone — removing a redaction rule is never an improvement. Student names, student numbers, and course names are never logged either: log the opaque UUID instead. `mycenter_token` is a live session credential and must never be logged.
+- **The grab path submits first and reads nothing before it.** `AccountWorker.run` used to make two round trips before the first `saveStudentXkJs` — `listSelections` for a local idempotency check and `listBatches` to re-read `zdxk` — at the exact moment a round trip is most expensive. `zdxk` is now snapshotted onto the target at config time, and a course already held is refused by the server with 已选该课, which `_mapSubmitMessage` types as `courseConflict` and the classifier turns into `skipTarget`. The server's answer is the better check for a second reason: the old one reported a skipped target as `success: true`, so the engine counted it toward 成功 and the log drew a green tick — indistinguishable from a course just won, which is exactly the confusion "success must be asserted, never inferred" exists to prevent. It also compared `kmh` values that are both `''` when upstream omits the id, so two unidentifiable courses matched. Do not reintroduce a pre-flight read.
+- **The live-log response preview decodes before it truncates.** `_CampusLoggingInterceptor._decodePreview` hands the whole body to `decodeGbk` and lets `_excerpt` cut *characters*. Slicing 600 bytes first put the cut mid-sequence on any response long enough to truncate, strict UTF-8 decoding threw, and the whole buffer fell through to the GBK branch — so precisely the long responses worth reading rendered as a wall of `���` while short ones looked fine.
+- **GBK decoding uses the `charset` package, not a hand-rolled table.** The server currently sends UTF-8; the GBK branch is a fallback. The table it replaced generated its mapping from a formula that assumed GB2312 level-1 was laid out in codepoint order (it is ordered by pinyin), and its level-2 helper said "近似" in its own comment — `趣味足球` decoded to `囓夙岔囃`. It did not fail loudly; it invented plausible characters, which is the worse failure for a decoder. Try UTF-8 first: GBK will "decode" almost any byte sequence, so reversing the order gives up the ability to tell them apart.
 - **Grabber state machine**: `idle → preparing → running → success/stopped/interrupted/captchaRequired/failed`. No auto-recovery after `interrupted`. 30-minute hard timeout. **Stopping is restartable**: `stop()` leaves the state in `stopped`, from which `start()` may be called directly — `GrabberPage` shows 重新开始 there rather than forcing a reset first, which during an open batch is time the user does not have. `start()` builds a fresh `GrabberState` rather than `copyWith`ing, or the new run's preparing phase displays the previous run's tally. `GrabberStatus.paused` is retained for the `GrabTaskStatus` mapping and old task rows but **is no longer produced**: pause cancelled the workers exactly as stop did (`AccountWorker._cancelled` is a one-way latch) yet parked the state where neither stop nor reset was offered — a soft deadlock.
 - **The live grabber log (`GrabLogBus`) is display-only and has two producers.** `_CampusLoggingInterceptor` publishes requests and responses, because it is the only place that sees the wire; `AccountWorker` / `GrabberEngine` publish verdicts and lifecycle, because the interceptor cannot tell an accepted submit from a refused one — both are HTTP 200. It is a process-wide singleton because clients are built deep inside `AccountsNotifier`, and the buffer is capped at 500 entries. Course names and account labels may appear **on screen** (the user owns their data) but nothing on this bus reaches the log file, whose rules are unchanged.
+- **Exporting the live log is deliberately not sanitized** (`grab_log_export.dart`, reachable from the grabber page's app bar as clipboard or file). It is the display path, not the log-file path: the user presses 导出 on data they already own and decides who sees it. Redacting the campus system's own reply would defeat the one job the export has — showing someone else what the school actually said. `LogSanitizer` and `AppLogger` still govern the log file and are not involved here.
 - **effectiveIntervalMs = max(userIntervalMs, settings.minRequestIntervalMs)** — jitter is upward only, never below the floor. Both values come from `app_settings`.
 - **xkms classification** lives in `Xkms` (`xkms_enum.dart`) and distinguishes exactly two cases:
   - `"0"|"1"|"2"|"3"` → submittable (选课 / 抢选 / 正选 / 补退选).
@@ -115,18 +119,18 @@ Every page reads its data through providers; there are no stubs left.
 - **Debug mode (`app_settings.debugModeEnabled`, default off) lifts the xkms gate, not the xkms value.** With it on, the batch picker lets an unrecognised batch be selected and `AccountWorker` submits instead of reporting `blockedReason` — but the request still carries the **server's own** `xkms` verbatim. Substituting a known code would destroy the only thing the mode exists to observe: what the campus system actually answers for a mode we do not recognise. `GrabberEngine` reads the flag at construction like the other limits, so the settings toggle is locked while a task runs, and `GrabberPage` shows a persistent banner while it is on — without that, a user who forgot the switch reads the server's correct refusal as a client bug.
 - **Localization delegates are mandatory**: `MaterialApp.router` forces `locale: Locale('zh')`, and the implicit `DefaultMaterialLocalizations` supports `en` only. `localizationsDelegates: S.localizationsDelegates` (which bundles the three `Global*` delegates) must stay wired, or every Material widget that calls `MaterialLocalizations.of()` — `NavigationRail`, `NavigationBar`, `Scaffold` drawers — throws at build time. Keep `supportedLocales: S.supportedLocales` so it tracks the `.arb` files.
 
-## Database Schema (Drift, schemaVersion=4)
+## Database Schema (Drift, schemaVersion=5)
 
 | Table | PK | Notes |
 |---|---|---|
 | `accounts` | UUID TEXT | `cascade` FK owner of CourseTarget and GrabTask |
-| `course_targets` | UUID TEXT | FK → accounts(id) ON DELETE CASCADE |
+| `course_targets` | UUID TEXT | FK → accounts(id) ON DELETE CASCADE; holds a `zdxk` snapshot |
 | `grab_tasks` | UUID TEXT | FK → accounts(id) ON DELETE CASCADE |
 | `app_settings` | id=1 (singleton) | created with defaults on first read; holds `userIntervalMs`, `minRequestIntervalMs`, `maxAccounts`, `maxConcurrentAccounts`, `debugModeEnabled` |
 
 Indexes: `idx_course_target_account_xkid`, `idx_grab_task_account_status`.
 
-Migration history: v1→v2 dropped `license_snapshots`; v2→v3 added the three limit columns and rebuilt `app_settings` to drop `update_channel` / `crash_reporting_enabled`; v3→v4 added `debug_mode_enabled` (default false, so an upgrade is behaviour-preserving).
+Migration history: v1→v2 dropped `license_snapshots`; v2→v3 added the three limit columns and rebuilt `app_settings` to drop `update_channel` / `crash_reporting_enabled`; v3→v4 added `debug_mode_enabled` (default false, so an upgrade is behaviour-preserving); v4→v5 added `course_targets.zdxk` (default 1, which is what the old fallback used when the re-read failed).
 
 After any schema change, bump `schemaVersion` and add a migration case in `AppDatabase.migration.onUpgrade`.
 
@@ -162,7 +166,7 @@ Tests live in `test/widget_test.dart` and `test/campus_parsing_test.dart`.
 - `ClockSyncStatus` (`campusNow` offset in both directions)
 - Interval calculation (`max(userIntervalMs, minRequestIntervalMs)`)
 
-`campus_parsing_test.dart` (48 cases) covers the response-parsing layer:
+`campus_parsing_test.dart` (51 cases) covers the response-parsing layer:
 `RsaEncryptor.extractFromHtml`, the `campus_envelope` unwrappers,
 `campusInt`/`campusString`, portal SSO (`parsePortalSession`,
 `findCourseSelectionApp`, `buildSsoUrl`), `Xkms` classification, the submit
@@ -182,7 +186,7 @@ the parsers depend on — hand-written approximations are what let the original
 defects through. Do not "tidy" a fixture into something that looks more regular
 than the server actually is.
 
-Widget tests (21 cases) pump the real `NKGrabberApp` with `appDatabaseProvider`
+Widget tests (25 cases) pump the real `NKGrabberApp` with `appDatabaseProvider`
 overridden to `NativeDatabase.memory()` and `secureStorageProvider` to a fake —
 the production providers open a file under the application support directory,
 which does not resolve in a test, so the page would spin forever and
@@ -214,7 +218,7 @@ which does not resolve in a test, so the page would spin forever and
   than by asserting on `Xkms.blockedReason`, which would pass with the bypass
   reverted.
 
-Run with `flutter test`. All 118 tests must pass before committing.
+Run with `flutter test`. All 126 tests must pass before committing.
 
 New tests must be checked negatively — break the wiring under test and
 confirm the case goes red. A green test proves nothing on its own; several of

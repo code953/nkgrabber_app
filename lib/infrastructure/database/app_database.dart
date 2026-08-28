@@ -24,7 +24,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
 
   @override
-  int get schemaVersion => 4;
+  int get schemaVersion => 5;
 
   @override
   MigrationStrategy get migration {
@@ -76,6 +76,14 @@ class AppDatabase extends _$AppDatabase {
         // behaves exactly as before until the user turns it on.
         if (from < 4) {
           await m.addColumn(appSettings, appSettings.debugModeEnabled);
+        }
+
+        // v4 → v5: targets snapshot the batch's zdxk so the grab path no
+        // longer spends a round trip re-reading it. Existing rows default to
+        // 1 — one course per submit, which is what the old conservative
+        // fallback did whenever the re-read failed.
+        if (from < 5) {
+          await m.addColumn(courseTargets, courseTargets.zdxk);
         }
       },
       beforeOpen: (details) async {

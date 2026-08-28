@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nkgrabber/core/errors/app_exception.dart';
@@ -17,6 +18,7 @@ import 'package:nkgrabber/features/grabber/application/grabber_engine.dart';
 import 'package:nkgrabber/features/grabber/application/retry_classifier.dart';
 import 'package:nkgrabber/features/grabber/domain/grab_log_bus.dart';
 import 'package:nkgrabber/features/grabber/domain/grab_log_entry.dart';
+import 'package:nkgrabber/features/grabber/domain/grab_log_export.dart';
 import 'package:nkgrabber/features/grabber/domain/grabber_state.dart';
 import 'package:nkgrabber/features/grabber/presentation/grabber_page.dart';
 import 'package:nkgrabber/infrastructure/campus/campus_adapter.dart';
@@ -102,6 +104,8 @@ Future<void> _seedTarget(
   String courseName = '测试课程',
   int priority = 0,
   bool enabled = true,
+  int zdxk = 1,
+  String kmh = '',
 }) {
   return db.courseTargetDao.insertTarget(
     CourseTargetsCompanion.insert(
@@ -109,11 +113,12 @@ Future<void> _seedTarget(
       accountId: accountId,
       xkid: 'xk-1',
       xkms: '1',
-      kmh: 'km-$id',
+      kmh: kmh.isEmpty ? 'km-$id' : kmh,
       batchName: '春季选课',
       courseName: courseName,
       priority: Value(priority),
       enabled: Value(enabled),
+      zdxk: Value(zdxk),
       snapshotAt: _seedNow,
     ),
   );
@@ -1065,34 +1070,198 @@ void main() {
       expect(find.textContaining('调试模式已开启'), findsOneWidget);
     });
   });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Grab path: submit first, no pre-flight reads
+  // ═══════════════════════════════════════════════════════════════════════
+  group('Grab path', () {
+    /// Drive a real worker over seeded targets against a recording adapter.
+    Future<_RecordingAdapter> runWorker(
+      AppDatabase db, {
+      SubmitResult Function(SubmitSelection)? onSubmit,
+      void Function(String id, {required bool success, String? message})?
+      onResult,
+    }) async {
+      final adapter = _RecordingAdapter(xkms: '0', onSubmit: onSubmit);
+      final worker = AccountWorker(
+        accountId: 'a1',
+        adapter: adapter,
+        effectiveIntervalMs: 1,
+        onTargetResult:
+            onResult ?? (_, {required bool success, String? message}) {},
+      );
+      await worker.run(await db.courseTargetDao.getEnabledByAccount('a1'));
+      return adapter;
+    }
+
+    test('submits without reading anything first', () async {
+      final db = AppDatabase(NativeDatabase.memory());
+      addTearDown(db.close);
+      await _seedAccount(db);
+      await _seedTarget(db);
+
+      final adapter = await runWorker(db);
+
+      // Both reads used to run before the first submit, costing two round
+      // trips at the moment they are most expensive.
+      expect(adapter.reads, isEmpty);
+      expect(adapter.submits, hasLength(1));
+    });
+
+    test('chunks by the zdxk snapshotted on the target', () async {
+      final db = AppDatabase(NativeDatabase.memory());
+      addTearDown(db.close);
+      await _seedAccount(db);
+      await _seedTarget(db, zdxk: 2);
+      await _seedTarget(db, id: 't2', priority: 1, zdxk: 2);
+      await _seedTarget(db, id: 't3', priority: 2, zdxk: 2);
+
+      final adapter = await runWorker(db);
+
+      // Without the snapshot this needed a listBatches round trip, and fell
+      // back to 1-per-request whenever that read failed.
+      expect(adapter.reads, isEmpty);
+      expect(adapter.submits.map((s) => s.kmhList.length), [2, 1]);
+    });
+
+    test('a course already held is a skip, never a success', () async {
+      final db = AppDatabase(NativeDatabase.memory());
+      addTearDown(db.close);
+      await _seedAccount(db);
+      await _seedTarget(db);
+
+      final results = <bool>[];
+      final adapter = await runWorker(
+        db,
+        // What the server actually answers for a repeat selection.
+        onSubmit: (_) => throw const CampusException(
+          message: '您已选该课程',
+          type: CampusExceptionType.courseConflict,
+        ),
+        onResult: (_, {required bool success, String? message}) =>
+            results.add(success),
+      );
+
+      // The verdict has to come from the submit. The old idempotency check
+      // decided this locally and reported success: true, which the engine
+      // counted toward 成功 and the log drew with a green tick —
+      // indistinguishable from a course the server had just granted.
+      expect(adapter.submits, hasLength(1));
+      expect(results, [false]);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Live log export
+  // ═══════════════════════════════════════════════════════════════════════
+  group('Live log export', () {
+    test('renders entries with timestamp, label and indented detail', () {
+      final at = DateTime(2026, 8, 28, 21, 33, 25, 429);
+      final text = formatGrabLog([
+        GrabLogEntry(
+          at: at,
+          kind: GrabLogKind.request,
+          message: '→ POST /njs_3033/xsxk_Xbk/saveStudentXkJs',
+          accountLabel: '田同学',
+          detail: 'xkid=xk-1\nxkms=0',
+        ),
+      ]);
+
+      expect(
+        text,
+        '21:33:25.429 [田同学] → POST /njs_3033/xsxk_Xbk/saveStudentXkJs\n'
+        '    xkid=xk-1\n'
+        '    xkms=0\n',
+      );
+    });
+
+    test('the file name carries a sortable timestamp', () {
+      expect(
+        grabLogFileName(DateTime(2026, 8, 28, 21, 33, 25)),
+        'nkgrabber-log-20260828-213325.txt',
+      );
+    });
+
+    testWidgets('the export button copies the log to the clipboard', (
+      tester,
+    ) async {
+      String? copied;
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        (call) async {
+          if (call.method == 'Clipboard.setData') {
+            copied = (call.arguments as Map)['text'] as String;
+          }
+          return null;
+        },
+      );
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          SystemChannels.platform,
+          null,
+        ),
+      );
+
+      grabLogBus
+        ..reset()
+        ..log(GrabLogKind.success, '选课成功：趣味足球', detail: '提交成功！');
+
+      await _pumpApp(tester);
+      await tester.tap(find.text('抢课').first);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byIcon(Icons.ios_share));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('复制到剪贴板'));
+      await tester.pumpAndSettle();
+
+      expect(copied, contains('选课成功：趣味足球'));
+      expect(copied, contains('提交成功！'));
+    });
+  });
 }
 
 /// A [CampusAdapter] that records submissions instead of making requests.
 class _RecordingAdapter implements CampusAdapter {
-  _RecordingAdapter({required this.xkms});
+  _RecordingAdapter({required this.xkms, this.onSubmit});
 
   final String xkms;
   final submits = <SubmitSelection>[];
 
-  @override
-  Future<List<SelectionBatch>> listBatches() async => [
-    SelectionBatch(
-      xkid: 'xk-1',
-      xkms: xkms,
-      batchName: '春季选课',
-      zdxk: 1,
-      kssj: '2026-01-01 00:00:00',
-      jssj: '2026-01-02 00:00:00',
-    ),
-  ];
+  /// Every read the worker makes on the grab path. Should stay empty: the
+  /// point of snapshotting `zdxk` is that submitting needs no round trip
+  /// first.
+  final reads = <String>[];
+
+  /// Lets a test answer a submit the way the server would.
+  final SubmitResult Function(SubmitSelection)? onSubmit;
 
   @override
-  Future<List<SelectionRecord>> listSelections(String xkid) async => const [];
+  Future<List<SelectionBatch>> listBatches() async {
+    reads.add('listBatches');
+    return [
+      SelectionBatch(
+        xkid: 'xk-1',
+        xkms: xkms,
+        batchName: '春季选课',
+        zdxk: 1,
+        kssj: '2026-01-01 00:00:00',
+        jssj: '2026-01-02 00:00:00',
+      ),
+    ];
+  }
+
+  @override
+  Future<List<SelectionRecord>> listSelections(String xkid) async {
+    reads.add('listSelections');
+    return const [];
+  }
 
   @override
   Future<SubmitResult> submit(SubmitSelection command) async {
     submits.add(command);
-    // Mirror what a closed batch really answers: a refusal, not a throw.
+    final answer = onSubmit;
+    if (answer != null) return answer(command);
     return const SubmitResult(success: true, message: 'ok');
   }
 

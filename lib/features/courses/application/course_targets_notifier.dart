@@ -122,6 +122,7 @@ class CourseTargetsNotifier extends StateNotifier<CourseTargetsState> {
     required String kmh,
     required String courseName,
     required String batchName,
+    required int zdxk,
     String? xbkid,
   }) async {
     try {
@@ -142,6 +143,7 @@ class CourseTargetsNotifier extends StateNotifier<CourseTargetsState> {
           xkid: xkid,
           xkms: xkms,
           kmh: kmh,
+          zdxk: Value(zdxk),
           xbkid: Value(xbkid),
           batchName: batchName,
           courseName: courseName,

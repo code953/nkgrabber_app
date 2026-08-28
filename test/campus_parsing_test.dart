@@ -14,6 +14,7 @@ library;
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:dio_cookie_manager/dio_cookie_manager.dart';
@@ -21,10 +22,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:nkgrabber/core/errors/app_exception.dart';
 import 'package:nkgrabber/core/utils/constants.dart';
 import 'package:nkgrabber/features/grabber/application/retry_classifier.dart';
+import 'package:nkgrabber/features/grabber/domain/grab_log_bus.dart';
+import 'package:nkgrabber/features/grabber/domain/grab_log_entry.dart';
 import 'package:nkgrabber/infrastructure/campus/campus_adapter_impl.dart';
 import 'package:nkgrabber/infrastructure/campus/campus_client_factory.dart';
 import 'package:nkgrabber/infrastructure/campus/campus_envelope.dart';
 import 'package:nkgrabber/infrastructure/campus/crypto/rsa_encryptor.dart';
+import 'package:nkgrabber/infrastructure/campus/encoding/gbk_codec.dart';
 import 'package:nkgrabber/infrastructure/campus/models/campus_models.dart';
 import 'package:nkgrabber/infrastructure/campus/portal_sso.dart';
 import 'package:nkgrabber/infrastructure/campus/xkms_enum.dart';
@@ -454,6 +458,67 @@ void main() {
       expect(Xkms.labelFor('1'), '抢选');
       expect(Xkms.labelFor('2'), '正选');
       expect(Xkms.labelFor('3'), '补退选');
+    });
+  });
+
+  group('live log preview', () {
+    // The preview used to slice 600 *bytes* and then decode. Any response long
+    // enough to truncate got cut mid-sequence, strict UTF-8 decoding threw, and
+    // the whole buffer fell through to the GBK branch — so precisely the long
+    // responses worth reading rendered as a wall of replacement characters,
+    // while short ones looked fine.
+    //
+    // Driven through the real client so the interceptor is what is under test;
+    // asserting on `decodeGbk` alone would pass with the fix reverted, because
+    // the defect was the *order*, not the decoder.
+    test('a long Chinese response is not mangled by truncation', () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(() => server.close(force: true));
+
+      // Long enough to truncate, with the 600-byte mark landing inside a
+      // 3-byte character: 'kmmc' values are 3 bytes each in UTF-8.
+      final body = jsonEncode({
+        'result': [
+          for (var i = 0; i < 60; i++) {'kmh': 'k$i', 'kmmc': '趣味足球'},
+        ],
+        'status': 200,
+      });
+
+      unawaited(
+        server.first.then((request) async {
+          request.response
+            ..statusCode = 200
+            ..headers.contentType = ContentType('application', 'json')
+            ..add(utf8.encode(body));
+          await request.response.close();
+        }),
+      );
+
+      grabLogBus.reset();
+      final client = CampusClient(
+        accountId: 'a1',
+        baseUrl: 'http://127.0.0.1:${server.port}',
+      );
+      await CampusAdapterImpl(client: client).listSelections('xk-1');
+
+      final preview = grabLogBus.entries
+          .lastWhere((e) => e.kind == GrabLogKind.response)
+          .detail!;
+
+      expect(preview, contains('趣味足球'));
+      expect(preview, isNot(contains('�')));
+    });
+
+    test('the GBK fallback decodes real GBK rather than inventing it', () {
+      // 趣味足球 in GBK. The hand-written table this replaced generated its
+      // mapping from a formula that assumed GB2312 level-1 was laid out in
+      // codepoint order (it is ordered by pinyin), so this decoded to 囓夙岔囃
+      // — plausible-looking characters, no error, nothing to notice.
+      final gbkBytes = Uint8List.fromList([
+        0xC8, 0xA4, 0xCE, 0xB6, 0xD7, 0xE3, 0xC7, 0xF2, //
+      ]);
+
+      expect(decodeGbk(gbkBytes), '趣味足球');
     });
   });
 

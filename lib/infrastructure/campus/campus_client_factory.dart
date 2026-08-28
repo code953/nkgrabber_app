@@ -170,17 +170,17 @@ class _CampusLoggingInterceptor extends Interceptor {
     handler.next(err);
   }
 
-  /// GBK/UTF-8 tolerant preview of a byte body.
+  /// Tolerant preview of a byte body.
+  ///
+  /// Decodes the whole body and lets [_excerpt] cut it by *characters*. The
+  /// previous order — slice 600 bytes, then decode — put the cut in the middle
+  /// of a multi-byte sequence whenever the body was long enough to truncate, so
+  /// strict UTF-8 decoding threw and the entire buffer fell through to the GBK
+  /// branch. On screen that showed as a wall of `���` for exactly the long
+  /// responses worth reading, while short ones rendered fine.
   String? _decodePreview(Object? data) {
     if (data is! List<int>) return data?.toString();
-    final head = data.length > _maxBodyChars
-        ? data.sublist(0, _maxBodyChars)
-        : data;
-    try {
-      return decodeGbk(Uint8List.fromList(head));
-    } on Object {
-      return String.fromCharCodes(head.where((b) => b >= 0x20 && b < 0x7f));
-    }
+    return decodeGbk(Uint8List.fromList(data));
   }
 
   String? _excerpt(Object? data) {

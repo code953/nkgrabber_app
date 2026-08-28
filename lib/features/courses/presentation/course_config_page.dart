@@ -249,6 +249,8 @@ class _CoursePickerPage extends ConsumerWidget {
       kmh: course.kmh,
       courseName: course.courseName,
       batchName: batch.batchName,
+      // Snapshotted here so the grab path never has to re-read it.
+      zdxk: batch.zdxk,
       xbkid: course.xbkid,
     );
 

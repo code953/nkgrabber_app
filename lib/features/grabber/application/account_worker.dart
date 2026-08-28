@@ -62,33 +62,39 @@ class AccountWorker {
 
   /// Run the submission loop for the given targets.
   ///
+  /// Submits straight away. There used to be two reads before the first
+  /// `saveStudentXkJs` — `listSelections` for an idempotency check and
+  /// `listBatches` to re-read `zdxk` — costing two round trips at the exact
+  /// moment they are most expensive. Both are gone:
+  ///
+  /// * `zdxk` is snapshotted onto the target when the user configures it.
+  /// * A course already held is refused by the server with 已选该课, which
+  ///   `_mapSubmitMessage` types as `courseConflict` and the classifier turns
+  ///   into `skipTarget`. The server's own answer is a better idempotency
+  ///   check than ours was, and unlike ours it cannot invent a success: the
+  ///   old `_filterAlreadySelected` reported a skipped target as
+  ///   `success: true`, which the engine counted toward 成功 and the live log
+  ///   drew with a green tick — indistinguishable from a course we had
+  ///   actually just won. It also compared `kmh` values that are both `''`
+  ///   when upstream omits the id, so two unidentifiable courses matched.
+  ///
   /// Returns the [RetryDecision] that caused the loop to stop,
   /// or null if all targets were processed.
   Future<RetryDecision?> run(List<CourseTargetEntry> targets) async {
-    // Step 1: Idempotency check — match against already-selected courses.
-    final remainingTargets = await _filterAlreadySelected(targets);
-    if (remainingTargets.isEmpty) {
-      _logger.info('[$accountId] All targets already selected');
-      return null;
-    }
-
-    // Step 2: Group targets by xkid for batch submission.
+    // Group targets by xkid for batch submission.
     final byBatch = <String, List<CourseTargetEntry>>{};
-    for (final target in remainingTargets) {
+    for (final target in targets) {
       byBatch.putIfAbsent(target.xkid, () => []).add(target);
     }
 
-    // Step 3: Process each batch.
     for (final entry in byBatch.entries) {
       if (_cancelled) return null;
 
       final xkid = entry.key;
       final batchTargets = entry.value;
 
-      // Validate xkms for all targets in this batch. A closed batch and an
-      // unrecognised mode are both non-submittable, but they need different
-      // messages — "please upgrade the client" is misleading when the batch is
-      // simply over.
+      // Validate xkms for all targets in this batch. Only a genuinely
+      // unrecognised mode blocks here — see `Xkms`.
       final xkms = batchTargets.first.xkms;
       final blockedReason = Xkms.blockedReason(xkms);
       if (blockedReason != null && !debugMode) {
@@ -99,9 +105,8 @@ class AccountWorker {
         continue;
       }
       if (blockedReason != null) {
-        // Debug mode: proceed, but say so — a submission against a closed
-        // batch is expected to be rejected by the server, and that rejection
-        // is the observation being made.
+        // Debug mode: proceed, but say so — the server is expected to refuse,
+        // and that refusal is the observation being made.
         _logger.warn(
           '[$accountId] Debug mode: submitting to a non-submittable batch '
           '($blockedReason)',
@@ -109,18 +114,8 @@ class AccountWorker {
         _log(GrabLogKind.lifecycle, '调试模式：无视批次状态强制提交', detail: blockedReason);
       }
 
-      // Re-fetch batch info for latest zdxk.
-      int zdxk;
-      try {
-        final batches = await adapter.listBatches();
-        final batch = batches.where((b) => b.xkid == xkid).firstOrNull;
-        zdxk = batch?.zdxk ?? 1;
-      } on Exception {
-        zdxk = 1; // Conservative default.
-      }
-
-      // Split targets into chunks respecting zdxk (minimum 1 to avoid infinite loop).
-      final chunks = _chunkTargets(batchTargets, zdxk);
+      // Split into chunks respecting the zdxk snapshotted at config time.
+      final chunks = _chunkTargets(batchTargets, batchTargets.first.zdxk);
 
       for (final chunk in chunks) {
         if (_cancelled) return null;
@@ -242,47 +237,6 @@ class AccountWorker {
     RetryDecision.skipTarget => '跳过该课程',
     RetryDecision.stopTask => '终止任务',
   };
-
-  /// Filter out targets that are already selected (idempotency check).
-  Future<List<CourseTargetEntry>> _filterAlreadySelected(
-    List<CourseTargetEntry> targets,
-  ) async {
-    final remaining = <CourseTargetEntry>[];
-
-    // Group by xkid to batch the idempotency check.
-    final byBatch = <String, List<CourseTargetEntry>>{};
-    for (final t in targets) {
-      byBatch.putIfAbsent(t.xkid, () => []).add(t);
-    }
-
-    for (final entry in byBatch.entries) {
-      try {
-        final selected = await adapter.listSelections(entry.key);
-        final selectedKmh = selected.map((s) => s.kmh).toSet();
-
-        for (final target in entry.value) {
-          if (selectedKmh.contains(target.kmh)) {
-            // The log file gets the opaque id; the course name goes only to
-            // the on-screen live log, which is never persisted.
-            _logger.info('[$accountId] Target ${target.id} already selected');
-            _log(GrabLogKind.success, '已选中，跳过：${target.courseName}');
-            onTargetResult(target.id, success: true, message: '已选中（幂等检查）');
-          } else {
-            remaining.add(target);
-          }
-        }
-      } on Exception catch (e) {
-        _logger.warn(
-          '[$accountId] Idempotency check failed for ${entry.key}',
-          e,
-        );
-        // If we can't check, include all targets.
-        remaining.addAll(entry.value);
-      }
-    }
-
-    return remaining;
-  }
 
   /// Split targets into chunks respecting the zdxk limit.
   ///
