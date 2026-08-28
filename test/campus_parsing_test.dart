@@ -422,6 +422,22 @@ void main() {
     });
   });
 
+  group('request headers', () {
+    // The UA used to end in `NKgrabber/1.0`, naming the tool in every request
+    // the school's access log ever saw. Nothing in the campus protocol keys
+    // off the UA, so identifying ourselves bought nothing.
+    test('the User-Agent does not identify the app', () {
+      final ua =
+          CampusClient(accountId: 'test').dio.options.headers['User-Agent']
+              as String;
+
+      expect(ua.toLowerCase(), isNot(contains('nkgrabber')));
+      expect(ua.toLowerCase(), isNot(contains('dart')));
+      expect(ua, startsWith('Mozilla/5.0'));
+      expect(ua, contains('Chrome/'));
+    });
+  });
+
   group('malformed Set-Cookie tolerance', () {
     // The login response carries two Set-Cookie headers, verbatim:
     //

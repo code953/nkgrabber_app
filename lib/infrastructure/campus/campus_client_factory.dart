@@ -25,10 +25,20 @@ class CampusClient {
         receiveTimeout: const Duration(seconds: 15),
         // Don't auto-decode; we handle GBK manually.
         responseType: ResponseType.bytes,
+        // A stock desktop-Chrome header set. The previous UA ended in
+        // `NKgrabber/1.0`, which named the tool in every single request — one
+        // `grep` server-side would have found every user of it. Nothing in the
+        // campus protocol keys off the UA, so there is no reason to be
+        // identifiable here.
         headers: {
           'User-Agent':
-              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) NKgrabber/1.0',
-          'Accept': '*/*',
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+              'AppleWebKit/537.36 (KHTML, like Gecko) '
+              'Chrome/131.0.0.0 Safari/537.36',
+          'Accept':
+              'text/html,application/xhtml+xml,application/xml;q=0.9,'
+              'image/avif,image/webp,*/*;q=0.8',
+          'Accept-Language': 'zh-CN,zh;q=0.9',
         },
       ),
     );
