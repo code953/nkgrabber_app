@@ -46,7 +46,7 @@ lib/
     accounts/       # AccountsNotifier, AccountsPage, AddAccountSheet
     courses/        # CourseTargetsNotifier, CourseConfigPage
     grabber/        # GrabberEngine, AccountWorker, RetryClassifier,
-                    #   GrabberController, GrabberPage
+                    #   GrabberController, GrabberPage, GrabLogBus
     settings/       # SettingsPage
   infrastructure/
     campus/         # CampusAdapter + impl, RSA, encoding, response envelope,
@@ -73,6 +73,7 @@ Every page reads its data through providers; there are no stubs left.
 | `batchesProvider`, `coursesProvider` | `FutureProvider.family` | The only network reads outside the engine |
 | `grabbableAccountsProvider` | `FutureProvider` | Enabled accounts that have ≥1 enabled target |
 | `grabberProvider` | `StateNotifier` | `GrabberController` mirrors the engine's broadcast stream |
+| `grabLogProvider` | `StreamProvider` | The live request/response log; replays `GrabLogBus`'s backlog because the page is built after a run starts |
 
 - **`appSettingsProvider` must not be a `StreamProvider` over `SettingsDao.watch()`.** Drift schedules a zero-duration cleanup timer when a query stream is cancelled. That timer is created during `finalizeTree`, after the framework's end-of-test pump has drained its queue, so it is still pending when `_verifyInvariants` runs and *every* widget test fails with "A Timer is still pending even after the widget tree was disposed". Teardowns run after that check, so they cannot fix it. Reading once and re-reading after each write keeps reactivity, since the row only changes through `AppSettingsNotifier`.
 - **Adapters are memory-only.** After a restart an account has a stored cookie but no `CampusClient`. Use `AccountsNotifier.ensureAdapter()` (async) rather than `getAdapter()` — it rebuilds from secure storage, and marks the account `expired` and returns null if the cookie is rejected. `GrabberEngine.AdapterResolver` is async for exactly this reason.
@@ -81,10 +82,14 @@ Every page reads its data through providers; there are no stubs left.
 ## Key Technical Constraints
 
 - **One HTTP target only**: the campus system (`http://campus.nks.edu.cn`, form POST). There is no business backend — do not add one.
+- **The User-Agent must not name the app.** It is a stock desktop-Chrome string in `campus_client_factory.dart`. The original ended in `NKgrabber/1.0`, which signed every request in the school's access log; nothing in the campus protocol keys off the UA, so identifying ourselves bought nothing. Pinned by a test.
 - **The campus wire format is not guessable — it was measured.** Every field name, body format, and envelope rule in `lib/infrastructure/campus/` came from probing the live deployment, and several are counter-intuitive:
   - `status` in the response envelope is an **HTTP-like int** (200), not a boolean. `status == true` is never satisfied.
   - The payload is under `result`, never under `data`. Reading `data` yields a silent empty list, not an error.
   - A **missing** `result` key means "response we don't understand"; `result: null` means "legitimately empty". Do not conflate them.
+  - A **missing `result.code` is not success on the submit path.** Read endpoints omit `code`, so `unwrapCampusCommand` defaults to treating its absence as success — but `submit()` passes `requireCode: true`, because a submit response we cannot parse (an HTML error page that still decodes, a `{"result":{}}`) is not evidence the course was granted. Defaulting it to success is what made the desktop client announce 抢课成功 for a course the server never granted while the phone client kept retrying.
+  - The school signals a refusal **two** ways: `result.code` and the envelope's `error` object. Both carry the same Chinese message, so `submit()` routes both through `_mapSubmitMessage`. Classifying only the first left 人数已满-via-`error` typed as `parameterError`, which `RetryClassifier` abandons the target on instead of retrying.
+  - `SubmitResult.success` is asserted only where `code == "0"` was actually seen. Never infer it from the absence of an exception.
   - The portal's `.jsmeb` endpoints take a **JSON** body under a form-encoded Content-Type. A genuinely form-encoded `params=[...]` is rejected with 参数格式非法.
   - The same field is typed inconsistently across endpoints (`zdxk` is the string `"2"`, `xkms` is the number `0`) — always go through `campusInt` / `campusString`.
   - Reaching the course-selection app needs the full `ssolx=5` SSO handshake (`token` + `apiUrl` + `userid`); a bare `GET /njs_3033/xsxk2` answers 403.
@@ -97,7 +102,8 @@ Every page reads its data through providers; there are no stubs left.
 - **Per-account isolation**: each campus account gets its own `Dio` + in-memory `CookieJar`. Cookies never touch disk. `AccountsNotifier` owns these clients and disposes them on account removal, failed login, and its own disposal.
 - **Secure storage only**: passwords and cookies live in platform secure storage (Android Keystore / iOS Keychain / Windows DPAPI / Linux Secret Service). Drift only stores reference keys.
 - **Log sanitization**: all log output passes through `LogSanitizer` before emission. Passwords, cookies, Bearer tokens, activation codes, `deviceToken`, `licenseCode` are replaced with `[REDACTED]`. The last three patterns are kept even though the online business is gone — removing a redaction rule is never an improvement. Student names, student numbers, and course names are never logged either: log the opaque UUID instead. `mycenter_token` is a live session credential and must never be logged.
-- **Grabber state machine**: `idle → preparing → running → success/paused/stopped/interrupted/captchaRequired/failed`. No auto-recovery after `interrupted`. 30-minute hard timeout.
+- **Grabber state machine**: `idle → preparing → running → success/stopped/interrupted/captchaRequired/failed`. No auto-recovery after `interrupted`. 30-minute hard timeout. **Stopping is restartable**: `stop()` leaves the state in `stopped`, from which `start()` may be called directly — `GrabberPage` shows 重新开始 there rather than forcing a reset first, which during an open batch is time the user does not have. `start()` builds a fresh `GrabberState` rather than `copyWith`ing, or the new run's preparing phase displays the previous run's tally. `GrabberStatus.paused` is retained for the `GrabTaskStatus` mapping and old task rows but **is no longer produced**: pause cancelled the workers exactly as stop did (`AccountWorker._cancelled` is a one-way latch) yet parked the state where neither stop nor reset was offered — a soft deadlock.
+- **The live grabber log (`GrabLogBus`) is display-only and has two producers.** `_CampusLoggingInterceptor` publishes requests and responses, because it is the only place that sees the wire; `AccountWorker` / `GrabberEngine` publish verdicts and lifecycle, because the interceptor cannot tell an accepted submit from a refused one — both are HTTP 200. It is a process-wide singleton because clients are built deep inside `AccountsNotifier`, and the buffer is capped at 500 entries. Course names and account labels may appear **on screen** (the user owns their data) but nothing on this bus reaches the log file, whose rules are unchanged.
 - **effectiveIntervalMs = max(userIntervalMs, settings.minRequestIntervalMs)** — jitter is upward only, never below the floor. Both values come from `app_settings`.
 - **xkms classification** lives in `Xkms` (`xkms_enum.dart`), which distinguishes three cases, because two of them need different words for the user:
   - `"1"|"2"|"3"` → submittable (抢选 / 正选 / 补退选).
@@ -155,15 +161,16 @@ Tests live in `test/widget_test.dart` and `test/campus_parsing_test.dart`.
 - `ClockSyncStatus` (`campusNow` offset in both directions)
 - Interval calculation (`max(userIntervalMs, minRequestIntervalMs)`)
 
-`campus_parsing_test.dart` (38 cases) covers the response-parsing layer:
+`campus_parsing_test.dart` (45 cases) covers the response-parsing layer:
 `RsaEncryptor.extractFromHtml`, the `campus_envelope` unwrappers,
 `campusInt`/`campusString`, portal SSO (`parsePortalSession`,
 `findCourseSelectionApp`, `buildSsoUrl`), `Xkms` classification, the submit
-payload shape, and the two transport-level workarounds the school's server
-forces on us (malformed `Set-Cookie`, manual SSO redirect following). The last
-group runs a loopback `HttpServer` that reproduces the portal's behaviour and
-drives the real `CampusClient` + `CampusAdapterImpl` through it — asserting on
-a hand-built `CookieManager` would have passed even with the fix reverted.
+payload shape, the User-Agent, the **submit verdict**, and the two
+transport-level workarounds the school's server forces on us (malformed
+`Set-Cookie`, manual SSO redirect following). Three groups run a loopback
+`HttpServer` and drive the real `CampusClient` + `CampusAdapterImpl` through
+it — asserting on a hand-built `CookieManager`, or on `unwrapCampusCommand`
+alone, would have passed even with the fix reverted.
 
 **Every fixture in that file is a verbatim excerpt of a real response** captured
 from the live deployment, with sensitive values (RSA modulus, session ids,
@@ -173,7 +180,7 @@ the parsers depend on — hand-written approximations are what let the original
 defects through. Do not "tidy" a fixture into something that looks more regular
 than the server actually is.
 
-Widget tests (15 cases) pump the real `NKGrabberApp` with `appDatabaseProvider`
+Widget tests (21 cases) pump the real `NKGrabberApp` with `appDatabaseProvider`
 overridden to `NativeDatabase.memory()` and `secureStorageProvider` to a fake —
 the production providers open a file under the application support directory,
 which does not resolve in a test, so the page would spin forever and
@@ -184,7 +191,18 @@ which does not resolve in a test, so the page would spin forever and
   resolve under the forced `zh` locale, empty state, list rendering
 - `CourseConfigPage`: no-account prompt, empty target state, priority ordering
 - `GrabberPage`: the start button stays disabled with no account, with an
-  account but no targets, and with only disabled targets; enabled otherwise
+  account but no targets, and with only disabled targets; enabled otherwise.
+  A finished run offers 重新开始 with no reset step and no 暂停 — driven by
+  actually pressing start, because the old blocker was UI gating (only
+  `_IdleView` had a start button) and an engine-level assertion passes with
+  it reverted. The live log reaches the screen through `grabLogProvider`.
+- `GrabLogBus`: backlog replay for a late subscriber, the 500-entry cap, and
+  millisecond timestamps (without which two submits one interval apart are
+  indistinguishable)
+- `stop then restart`: a stopped engine restarts without a reset, the new run
+  does not inherit the old counters — asserted on the `preparing` state the
+  stream actually emits, since the terminal state is rebuilt either way — and
+  a run publishes both lifecycle and verdict lines
 - `SettingsPage`: renders the stored row, persists a slider release, warns
   when the user interval is below the floor
 - Debug mode: `AccountWorker` refuses a closed batch with the flag off and
@@ -193,7 +211,7 @@ which does not resolve in a test, so the page would spin forever and
   banner. Driven through a recording `CampusAdapter` rather than by asserting
   on `Xkms.blockedReason`, which would pass with the bypass reverted.
 
-Run with `flutter test`. All 98 tests must pass before committing.
+Run with `flutter test`. All 115 tests must pass before committing.
 
 New tests must be checked negatively — break the wiring under test and
 confirm the case goes red. A green test proves nothing on its own; several of
