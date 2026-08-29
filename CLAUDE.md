@@ -225,10 +225,56 @@ confirm the case goes red. A green test proves nothing on its own; several of
 these were written after a page was already wired, and only the negative check
 distinguishes "asserts the behaviour" from "asserts a coincidence".
 
+## Release & Identity
+
+- **The app identifier is `top.code953.nkgrabber` on every platform.** It was
+  `com.example.nkgrabber` (the `flutter create` default) until the first public
+  release. Changing it after users install makes the new build a *different
+  app* on Android rather than an upgrade, so it had to be settled before
+  v1.0.0-beta. The Linux `APPLICATION_ID` is load-bearing rather than
+  cosmetic: `g_set_prgname` publishes it as the Wayland `app_id` / X11
+  `WM_CLASS`, and the compositor resolves it to `<id>.desktop` to find the
+  icon. ID and desktop filename must stay identical.
+- **The executable name stays `nkgrabber` (lowercase)** in both CMake
+  `BINARY_NAME`s and macOS `PRODUCT_NAME`. Only the *display* name is
+  `NKgrabber`. Renaming the binary would break the three hardcoded `TEST_HOST`
+  paths in the macOS pbxproj and the `nkgrabber.app` path in `release.yml`.
+- **Android release builds must not ship debug-signed.** `build.gradle.kts`
+  loads `android/key.properties` when present and falls back to the debug key
+  when absent, so a checkout without the keystore still builds. CI writes that
+  file from secrets and **fails the job if the secret is missing** — a
+  debug-signed release is the one mistake that cannot be corrected afterwards,
+  since changing signatures forces every user to uninstall. The workflow then
+  asserts on the certificate with `keytool -printcert`, because a successful
+  build says nothing about which key signed it.
+- **Icons are generated, not hand-placed.** `tool/gen_icon_variants.ps1`
+  reshapes `assets/icon/icon.png` into the two variants the platforms actually
+  need, then `flutter_launcher_icons.yaml` fans them out. Two things there are
+  easy to get wrong and were:
+  - The source art is a rounded square on an **opaque white** canvas. Removing
+    those corners by colour-keying white punches transparent holes through the
+    document, the graduation cap and the hand — the artwork's interior is full
+    of white. The corners must be cut **geometrically**, by clipping to a
+    rounded rectangle. The colour-keyed version still looked like an icon at a
+    glance, which is what made it dangerous.
+  - `flutter_launcher_icons` writes a 16% `<inset>` into
+    `mipmap-anydpi-v26/ic_launcher.xml`, but `icon_foreground.png` is already
+    pre-inset to 72%. Stacking both renders the art at ~60% of the canvas. The
+    inset is removed by hand after generation — **re-check that file after
+    re-running the generator**, which overwrites it.
+- **`SHA256SUMS.txt` is generated from a flattened artifact directory**
+  (`merge-multiple: true`). Without that, the paths recorded are
+  `./windows-x64/nkgrabber-windows-x64.zip`, which never match the flat
+  filenames the release serves, so `sha256sum -c` fails on every line.
+- **The version lives in `pubspec.yaml` and is mirrored by
+  `AppConstants.appVersion`**, pinned by a test that reads the pubspec. The
+  About row used to carry its own literal, so bumping the pubspec left the UI
+  reporting the previous version.
+
 ## CI/CD
 
 - `.github/workflows/ci.yml` — runs on every PR: format check, analyze, test, generated-file consistency check.
-- `.github/workflows/release.yml` — runs on `v*` tags: builds all 5 platforms and creates a GitHub Release with SHA256SUMS.
+- `.github/workflows/release.yml` — runs on `v*` tags: builds all 5 platforms, verifies the Android signing certificate, and creates a **pre-release** GitHub Release with SHA256SUMS. iOS is a compile check only (`--no-codesign`) and ships no artifact, but `create-release` still depends on it, so an iOS compile failure blocks the whole release.
 
 ## Commit Convention
 
