@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nkgrabber/app/theme.dart';
+import 'package:nkgrabber/core/utils/constants.dart';
 import 'package:nkgrabber/core/utils/diagnostics_exporter.dart';
 import 'package:nkgrabber/features/accounts/application/accounts_notifier.dart';
 import 'package:nkgrabber/features/grabber/application/grabber_controller.dart';
@@ -126,7 +127,7 @@ class _SettingsBody extends ConsumerWidget {
         const ListTile(
           leading: Icon(Icons.info_outline),
           title: Text('NKgrabber'),
-          subtitle: Text('v1.0.0'),
+          subtitle: Text('v${AppConstants.appVersion}'),
         ),
         const Divider(),
         // Last section on purpose: it is the one setting that changes what a

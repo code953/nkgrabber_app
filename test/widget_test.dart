@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:math';
 
 import 'package:drift/drift.dart' show Value;
@@ -242,6 +243,22 @@ void main() {
         AppConstants.defaultMaxConcurrentAccounts,
         lessThanOrEqualTo(AppConstants.defaultMaxAccounts),
       );
+    });
+
+    test('appVersion matches the version in pubspec.yaml', () {
+      // The version used to live in three independent places: pubspec.yaml, a
+      // string literal in the About row, and the git tag. Bumping one left the
+      // others stale, so the app could report a version it was not.
+      final pubspec = File('pubspec.yaml').readAsStringSync();
+      final match = RegExp(
+        r'^version:\s*(\S+)$',
+        multiLine: true,
+      ).firstMatch(pubspec);
+      expect(match, isNotNull, reason: 'pubspec.yaml has no version: line');
+
+      // pubspec carries `<version>+<build>`; AppConstants carries the version.
+      final pubspecVersion = match!.group(1)!.split('+').first;
+      expect(AppConstants.appVersion, pubspecVersion);
     });
   });
 
