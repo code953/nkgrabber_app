@@ -2,6 +2,24 @@
 
 高校选课辅助客户端，支持 Android、Windows、Linux、macOS、iOS 五端。
 
+## 下载
+
+前往 [Releases](https://github.com/code953/nkgrabber_app/releases) 下载对应平台的安装包。
+
+| 平台 | 文件 | 说明 |
+|------|------|------|
+| Android | `app-*-release.apk` | 按 CPU 架构分包，多数手机选 `arm64-v8a` |
+| Windows | `nkgrabber-windows-x64.zip` | 解压后运行 `nkgrabber.exe` |
+| Linux | `nkgrabber-linux-x64.tar.gz` | 解压后运行 `./install.sh` 添加桌面项，或直接运行 `./nkgrabber` |
+| macOS | `nkgrabber-macos-universal.dmg` | 见下方说明 |
+
+每次发布附带 `SHA256SUMS.txt`，可用于校验下载完整性。
+
+**macOS 用户注意**：安装包未经 Apple 公证，首次打开会被 Gatekeeper 拦截。
+需在「访达」中右键点击应用图标 →「打开」，再在弹窗中确认。
+
+**iOS 暂不提供安装包**。CI 只做编译验证，分发 iOS 应用需要 Apple 开发者账号。
+
 ## 功能
 
 - 多账号管理（密码/Cookie 模式）
@@ -108,4 +126,16 @@ lib/
 
 ## 许可
 
-私有项目，未经授权禁止分发。
+本项目采用 [GNU General Public License v3.0](LICENSE) 授权。
+
+你可以自由使用、修改和分发本软件，但基于本项目的衍生作品必须同样以 GPL-3.0
+开源。
+
+## 免责声明
+
+本项目仅供学习与技术交流使用。
+
+使用者应自行遵守所在学校的选课规定与相关规章制度，并对使用本软件产生的一切
+后果负责。作者不对因使用本软件导致的任何损失或处分承担责任。
+
+若你所在学校明确禁止使用此类工具，请不要使用。
