@@ -46,3 +46,9 @@ app.*.map.json
 
 logs_89556353535/*
 message.txt
+
+# Signing material. android/.gitignore already covers these, but only under
+# android/ — a keystore dropped at the repo root would otherwise be committed.
+key.properties
+**/*.keystore
+**/*.jks
