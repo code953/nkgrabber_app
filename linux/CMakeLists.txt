@@ -7,7 +7,7 @@ project(runner LANGUAGES CXX)
 set(BINARY_NAME "nkgrabber")
 # The unique GTK application identifier for this application. See:
 # https://wiki.gnome.org/HowDoI/ChooseApplicationID
-set(APPLICATION_ID "com.example.nkgrabber")
+set(APPLICATION_ID "top.code953.nkgrabber")
 
 # Explicitly opt in to modern CMake behaviors to avoid warnings with recent
 # versions of CMake.
@@ -126,3 +126,19 @@ if(NOT CMAKE_BUILD_TYPE MATCHES "Debug")
   install(FILES "${AOT_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
     COMPONENT Runtime)
 endif()
+
+# === Desktop integration ===
+# Shipped inside the bundle rather than installed to /usr, because the tarball
+# is relocatable: install.sh substitutes the real path into the .desktop
+# template once the user has extracted it somewhere. Wiring this through CMake
+# (rather than copying files in the release workflow) keeps a local
+# `flutter build linux` bundle identical to the one CI publishes, so a broken
+# Exec= or a missing icon shows up before a tag is cut rather than after.
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/packaging/${APPLICATION_ID}.desktop.in"
+  DESTINATION "${INSTALL_BUNDLE_DATA_DIR}" COMPONENT Runtime)
+
+install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/packaging/icons"
+  DESTINATION "${INSTALL_BUNDLE_DATA_DIR}" COMPONENT Runtime)
+
+install(PROGRAMS "${CMAKE_CURRENT_SOURCE_DIR}/packaging/install.sh"
+  DESTINATION "${CMAKE_INSTALL_PREFIX}" COMPONENT Runtime)

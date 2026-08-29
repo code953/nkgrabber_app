@@ -1,4 +1,4 @@
-package com.example.nkgrabber
+package top.code953.nkgrabber
 
 import io.flutter.embedding.android.FlutterActivity
 

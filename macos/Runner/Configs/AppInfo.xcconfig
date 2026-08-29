@@ -8,7 +8,7 @@
 PRODUCT_NAME = nkgrabber
 
 // The application's bundle identifier
-PRODUCT_BUNDLE_IDENTIFIER = com.example.nkgrabber
+PRODUCT_BUNDLE_IDENTIFIER = top.code953.nkgrabber
 
 // The copyright displayed in application information
-PRODUCT_COPYRIGHT = Copyright © 2026 com.example. All rights reserved.
+PRODUCT_COPYRIGHT = Copyright © 2026 code953. Licensed under GPL-3.0.

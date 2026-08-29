@@ -45,12 +45,19 @@ static void my_application_activate(GApplication* application) {
   if (use_header_bar) {
     GtkHeaderBar* header_bar = GTK_HEADER_BAR(gtk_header_bar_new());
     gtk_widget_show(GTK_WIDGET(header_bar));
-    gtk_header_bar_set_title(header_bar, "nkgrabber");
+    gtk_header_bar_set_title(header_bar, "NKgrabber");
     gtk_header_bar_set_show_close_button(header_bar, TRUE);
     gtk_window_set_titlebar(window, GTK_WIDGET(header_bar));
   } else {
-    gtk_window_set_title(window, "nkgrabber");
+    gtk_window_set_title(window, "NKgrabber");
   }
+
+  // Resolve the window icon through the icon theme. The name must match the
+  // hicolor icon installed by linux/packaging/install.sh and the Icon= key in
+  // top.code953.nkgrabber.desktop. Wayland ignores this and maps the surface
+  // app_id (set via g_set_prgname) to the .desktop file instead, so both paths
+  // depend on APPLICATION_ID and the desktop filename staying identical.
+  gtk_window_set_default_icon_name(APPLICATION_ID);
 
   gtk_window_set_default_size(window, 1280, 720);
 
