@@ -1,0 +1,15 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=NKgrabber
+GenericName=Course Registration Client
+GenericName[zh_CN]=选课辅助客户端
+Comment=Course selection assistant for university students
+Comment[zh_CN]=高校选课辅助客户端
+Exec="@EXEC@"
+Icon=top.code953.nkgrabber
+Terminal=false
+Categories=Education;Utility;
+Keywords=course;registration;grabber;选课;抢课;
+StartupNotify=true
+StartupWMClass=top.code953.nkgrabber
