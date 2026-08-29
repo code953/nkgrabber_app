@@ -1,0 +1,41 @@
+# Launcher-icon generation config, consumed only by
+# `dart run flutter_launcher_icons`. Kept out of pubspec.yaml deliberately:
+# nothing at app build time reads it, so a malformed edit here cannot break
+# dependency resolution or `flutter build`.
+#
+# The variants come from tool/gen_icon_variants.ps1 — see that file for why the
+# source art needs reshaping per platform rather than being used directly.
+flutter_launcher_icons:
+  image_path: "assets/icon/icon_fullbleed.png"
+
+  # `android: true` keeps the existing `ic_launcher` resource name, so
+  # AndroidManifest.xml (android:icon="@mipmap/ic_launcher") needs no change.
+  android: true
+  min_sdk_android: 24
+  # Android masks the adaptive foreground to roughly the centre 66%, so the art
+  # is pre-inset to 72% in icon_foreground.png. The background is the art's own
+  # edge blue, so the two layers read as one surface under any launcher mask.
+  adaptive_icon_background: "#1164EF"
+  adaptive_icon_foreground: "assets/icon/icon_foreground.png"
+
+  # An alpha channel in the App Store icon is a hard ITMS-90717 rejection, and
+  # a transparent icon composites against black on-device. icon_fullbleed.png
+  # is already opaque; remove_alpha_ios guarantees it stays that way, flattened
+  # against the art's own blue rather than the package's default white.
+  ios: true
+  remove_alpha_ios: true
+  background_color_ios: "#1164EF"
+
+  # Overwrites windows/runner/resources/app_icon.ico in place; Runner.rc
+  # already points at that path, so it needs no edit. 256 is the ICO format
+  # maximum — the default of 48 is what makes Explorer's large-icon view blurry.
+  windows:
+    generate: true
+    image_path: "assets/icon/icon_fullbleed.png"
+    icon_size: 256
+
+  macos:
+    generate: true
+    image_path: "assets/icon/icon_fullbleed.png"
+
+# No `web:` block — this project has no web/ directory, and enabling it fails.

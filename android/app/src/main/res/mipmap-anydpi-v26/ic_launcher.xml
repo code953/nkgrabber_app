@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+  <background android:drawable="@color/ic_launcher_background"/>
+  <!--
+    No <inset> here on purpose. flutter_launcher_icons emits a 16% inset by
+    default, but assets/icon/icon_foreground.png is ALREADY pre-inset to 72% by
+    tool/gen_icon_variants.ps1. Stacking both would render the art at roughly
+    60% of the canvas — a visibly shrunken icon floating in a blue field.
+    Regenerating icons rewrites this file, so re-check it after running
+    `dart run flutter_launcher_icons`.
+  -->
+  <foreground android:drawable="@drawable/ic_launcher_foreground"/>
+</adaptive-icon>

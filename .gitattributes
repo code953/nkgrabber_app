@@ -1,0 +1,24 @@
+# Keep line endings sane across the Windows dev machine and the Linux/macOS CI
+# runners. Without this, Git checks install.sh out with CRLF on Windows and
+# commits it that way, and a shell script with CRLF fails on Linux with a
+# "bad interpreter: /bin/sh^M" that names neither the real cause nor the fix.
+* text=auto eol=lf
+
+# Shell scripts and desktop entries are consumed by Linux tooling only.
+*.sh text eol=lf
+*.desktop text eol=lf
+*.desktop.in text eol=lf
+
+# Windows-only build inputs keep CRLF.
+*.rc text eol=crlf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+
+# Binary assets — never convert, never diff as text.
+*.png binary
+*.ico binary
+*.jks binary
+*.keystore binary
+*.dmg binary
+*.zip binary
+*.tar.gz binary
