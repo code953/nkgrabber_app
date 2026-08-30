@@ -60,6 +60,23 @@ jobs:
           # debug-signed release is the one mistake that cannot be corrected
           # after users install. Assert on the certificate itself — for every
           # APK, since each ABI split is signed separately.
+          #
+          # apksigner, not `keytool -printcert -jarfile`: keytool reads only v1
+          # (JAR) signatures, and at minSdk 24 AGP signs with v2 only, so
+          # keytool sees nothing at all. That failed loudly here only by
+          # accident — the "is it the debug key" test greps output that is
+          # always empty, so it would have reported a debug-signed APK as
+          # clean. A check that cannot fail is worse than no check.
+          # $ANDROID_SDK_ROOT is not guaranteed to be exported in every step,
+          # so fall back through the other names the runner image uses before
+          # giving up. Failing to *find* the tool must not look like a pass.
+          SDK="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          APKSIGNER=$(find "$SDK/build-tools" -name apksigner -type f 2>/dev/null | sort -V | tail -1)
+          if [ -z "$APKSIGNER" ]; then
+            echo "::error::apksigner not found under $SDK/build-tools."
+            exit 1
+          fi
+          echo "Using $APKSIGNER"
           shopt -s nullglob
           apks=(build/app/outputs/flutter-apk/*-release.apk)
           if [ ${#apks[@]} -eq 0 ]; then
@@ -68,11 +85,19 @@ jobs:
           fi
           for apk in "${apks[@]}"; do
             echo "--- $apk"
-            if keytool -printcert -jarfile "$apk" | grep -q "CN=Android Debug"; then
+            # Capture rather than pipe: piping into grep swallows the tool's
+            # own error message on stdout, which is what made the previous
+            # failure show up as a bare exit 1 with no explanation.
+            certs=$("$APKSIGNER" verify --print-certs "$apk")
+            echo "$certs"
+            if ! grep -q 'certificate DN:' <<<"$certs"; then
+              echo "::error::$apk carries no signing certificate."
+              exit 1
+            fi
+            if grep -q 'CN=Android Debug' <<<"$certs"; then
               echo "::error::$apk is signed with the Android debug key."
               exit 1
             fi
-            keytool -printcert -jarfile "$apk" | grep -E 'Owner|Valid'
           done
       - name: Clean up signing material
         if: always()
