@@ -52,3 +52,5 @@ message.txt
 key.properties
 **/*.keystore
 **/*.jks
+
+temp_file/
