@@ -118,6 +118,7 @@ class _TargetList extends ConsumerWidget {
           courseName: t.courseName,
           batchName: t.batchName,
           xkms: Xkms.labelFor(t.xkms),
+          kmh: t.kmh,
           enabled: t.enabled,
           onToggle: (v) => notifier.toggleEnabled(t.id, enabled: v),
           onDelete: () => notifier.removeTarget(t.id),
@@ -314,6 +315,7 @@ class TargetListCard extends StatelessWidget {
     required this.courseName,
     required this.batchName,
     required this.xkms,
+    required this.kmh,
     required this.enabled,
     this.onToggle,
     this.onDelete,
@@ -323,6 +325,7 @@ class TargetListCard extends StatelessWidget {
   final String courseName;
   final String batchName;
   final String xkms;
+  final String kmh;
   final bool enabled;
   final ValueChanged<bool>? onToggle;
   final VoidCallback? onDelete;
@@ -333,7 +336,7 @@ class TargetListCard extends StatelessWidget {
       child: ListTile(
         leading: Switch(value: enabled, onChanged: onToggle),
         title: Text(courseName),
-        subtitle: Text('$batchName · $xkms'),
+        subtitle: Text('$batchName · $xkms · kmh: $kmh'),
         trailing: IconButton(
           icon: const Icon(Icons.delete_outline),
           onPressed: onDelete,
