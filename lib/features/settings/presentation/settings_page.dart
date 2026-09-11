@@ -58,7 +58,7 @@ class _SettingsBody extends ConsumerWidget {
                 ? Color(int.parse(settings.customThemeColor!))
                 : null,
             onChanged: (Color? color) => notifier.setCustomThemeColor(
-              color != null ? '0x${color.a.toInt().toRadixString(16).padLeft(2, '0')}${color.r.toInt().toRadixString(16).padLeft(2, '0')}${color.g.toInt().toRadixString(16).padLeft(2, '0')}${color.b.toInt().toRadixString(16).padLeft(2, '0')}' : null,
+              color?.toARGB32().toString(),
             ),
           ),
         const Divider(),
