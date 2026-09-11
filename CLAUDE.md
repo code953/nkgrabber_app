@@ -280,6 +280,8 @@ distinguishes "asserts the behaviour" from "asserts a coincidence".
 
 Each phase of work gets its own commit. Use `feat: Phase N - description` format. Write commit messages in Simplified Chinese.
 
+**After completing each functional update, perform a git commit immediately.** This ensures that each feature or fix is captured as a discrete checkpoint in version control.
+
 ## Sensitive Data Rules
 
 Never commit or log:
