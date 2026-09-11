@@ -12,7 +12,7 @@ class AppConstants {
   static const appVersion = '1.0.0-beta';
 
   /// Campus system base URL.
-  static const campusBaseUrl = 'http://campus.nks.edu.cn';
+  static const campusBaseUrl = 'https://campus.nks.edu.cn';
 
   /// Maximum continuous grab task runtime (minutes).
   static const maxGrabTaskRuntimeMinutes = 30;
