@@ -77,16 +77,19 @@ class _NKGrabberAppState extends ConsumerState<NKGrabberApp> {
     // Falls back to `system` while the settings row is still loading, which is
     // also the stored default — so the first frame does not flash a theme the
     // user did not pick.
+    final settings = ref.watch(appSettingsProvider).valueOrNull;
     final themeMode = AppThemeMode.fromString(
-      ref.watch(appSettingsProvider).valueOrNull?.theme ??
-          AppThemeMode.system.name,
+      settings?.theme ?? AppThemeMode.system.name,
     );
+    final customColor = settings?.customThemeColor != null
+        ? Color(int.parse(settings!.customThemeColor!))
+        : null;
 
     return MaterialApp.router(
       title: 'NKgrabber',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.lightTheme(themeMode),
-      darkTheme: AppTheme.darkTheme(themeMode),
+      theme: AppTheme.lightTheme(themeMode, customColor: customColor),
+      darkTheme: AppTheme.darkTheme(themeMode, customColor: customColor),
       themeMode: AppTheme.themeMode(themeMode),
       routerConfig: _router,
       // These delegates are not optional. Without them the only

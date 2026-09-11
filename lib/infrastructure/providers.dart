@@ -103,4 +103,8 @@ class AppSettingsNotifier extends AsyncNotifier<AppSettingsEntry> {
   // ignore: avoid_positional_boolean_parameters
   Future<void> setDebugModeEnabled(bool enabled) =>
       _apply((d) => d.setDebugModeEnabled(enabled));
+
+  /// Persist the custom theme color (ARGB hex string).
+  Future<void> setCustomThemeColor(String? colorHex) =>
+      _apply((d) => d.setCustomThemeColor(colorHex));
 }

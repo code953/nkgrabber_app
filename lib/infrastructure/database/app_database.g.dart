@@ -2134,6 +2134,17 @@ class $AppSettingsTable extends AppSettings
     requiredDuringInsert: false,
     defaultValue: const Constant('system'),
   );
+  static const VerificationMeta _customThemeColorMeta = const VerificationMeta(
+    'customThemeColor',
+  );
+  @override
+  late final GeneratedColumn<String> customThemeColor = GeneratedColumn<String>(
+    'custom_theme_color',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _userIntervalMsMeta = const VerificationMeta(
     'userIntervalMs',
   );
@@ -2221,6 +2232,7 @@ class $AppSettingsTable extends AppSettings
   List<GeneratedColumn> get $columns => [
     id,
     theme,
+    customThemeColor,
     userIntervalMs,
     minRequestIntervalMs,
     maxAccounts,
@@ -2248,6 +2260,15 @@ class $AppSettingsTable extends AppSettings
       context.handle(
         _themeMeta,
         theme.isAcceptableOrUnknown(data['theme']!, _themeMeta),
+      );
+    }
+    if (data.containsKey('custom_theme_color')) {
+      context.handle(
+        _customThemeColorMeta,
+        customThemeColor.isAcceptableOrUnknown(
+          data['custom_theme_color']!,
+          _customThemeColorMeta,
+        ),
       );
     }
     if (data.containsKey('user_interval_ms')) {
@@ -2324,6 +2345,10 @@ class $AppSettingsTable extends AppSettings
         DriftSqlType.string,
         data['${effectivePrefix}theme'],
       )!,
+      customThemeColor: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}custom_theme_color'],
+      ),
       userIntervalMs: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}user_interval_ms'],
@@ -2366,8 +2391,11 @@ class AppSettingsEntry extends DataClass
   /// Singleton row ID (always 1).
   final int id;
 
-  /// UI theme: 'simple', 'anime', or 'system'.
+  /// UI theme: 'simple', 'anime', 'system', or 'custom'.
   final String theme;
+
+  /// Custom theme seed color (ARGB hex string), null if not using custom theme.
+  final String? customThemeColor;
 
   /// User-configured request interval in milliseconds.
   final int userIntervalMs;
@@ -2403,6 +2431,7 @@ class AppSettingsEntry extends DataClass
   const AppSettingsEntry({
     required this.id,
     required this.theme,
+    this.customThemeColor,
     required this.userIntervalMs,
     required this.minRequestIntervalMs,
     required this.maxAccounts,
@@ -2416,6 +2445,9 @@ class AppSettingsEntry extends DataClass
     final map = <String, Expression>{};
     map['id'] = Variable<int>(id);
     map['theme'] = Variable<String>(theme);
+    if (!nullToAbsent || customThemeColor != null) {
+      map['custom_theme_color'] = Variable<String>(customThemeColor);
+    }
     map['user_interval_ms'] = Variable<int>(userIntervalMs);
     map['min_request_interval_ms'] = Variable<int>(minRequestIntervalMs);
     map['max_accounts'] = Variable<int>(maxAccounts);
@@ -2430,6 +2462,9 @@ class AppSettingsEntry extends DataClass
     return AppSettingsCompanion(
       id: Value(id),
       theme: Value(theme),
+      customThemeColor: customThemeColor == null && nullToAbsent
+          ? const Value.absent()
+          : Value(customThemeColor),
       userIntervalMs: Value(userIntervalMs),
       minRequestIntervalMs: Value(minRequestIntervalMs),
       maxAccounts: Value(maxAccounts),
@@ -2448,6 +2483,7 @@ class AppSettingsEntry extends DataClass
     return AppSettingsEntry(
       id: serializer.fromJson<int>(json['id']),
       theme: serializer.fromJson<String>(json['theme']),
+      customThemeColor: serializer.fromJson<String?>(json['customThemeColor']),
       userIntervalMs: serializer.fromJson<int>(json['userIntervalMs']),
       minRequestIntervalMs: serializer.fromJson<int>(
         json['minRequestIntervalMs'],
@@ -2467,6 +2503,7 @@ class AppSettingsEntry extends DataClass
     return <String, dynamic>{
       'id': serializer.toJson<int>(id),
       'theme': serializer.toJson<String>(theme),
+      'customThemeColor': serializer.toJson<String?>(customThemeColor),
       'userIntervalMs': serializer.toJson<int>(userIntervalMs),
       'minRequestIntervalMs': serializer.toJson<int>(minRequestIntervalMs),
       'maxAccounts': serializer.toJson<int>(maxAccounts),
@@ -2480,6 +2517,7 @@ class AppSettingsEntry extends DataClass
   AppSettingsEntry copyWith({
     int? id,
     String? theme,
+    Value<String?> customThemeColor = const Value.absent(),
     int? userIntervalMs,
     int? minRequestIntervalMs,
     int? maxAccounts,
@@ -2490,6 +2528,9 @@ class AppSettingsEntry extends DataClass
   }) => AppSettingsEntry(
     id: id ?? this.id,
     theme: theme ?? this.theme,
+    customThemeColor: customThemeColor.present
+        ? customThemeColor.value
+        : this.customThemeColor,
     userIntervalMs: userIntervalMs ?? this.userIntervalMs,
     minRequestIntervalMs: minRequestIntervalMs ?? this.minRequestIntervalMs,
     maxAccounts: maxAccounts ?? this.maxAccounts,
@@ -2502,6 +2543,9 @@ class AppSettingsEntry extends DataClass
     return AppSettingsEntry(
       id: data.id.present ? data.id.value : this.id,
       theme: data.theme.present ? data.theme.value : this.theme,
+      customThemeColor: data.customThemeColor.present
+          ? data.customThemeColor.value
+          : this.customThemeColor,
       userIntervalMs: data.userIntervalMs.present
           ? data.userIntervalMs.value
           : this.userIntervalMs,
@@ -2527,6 +2571,7 @@ class AppSettingsEntry extends DataClass
     return (StringBuffer('AppSettingsEntry(')
           ..write('id: $id, ')
           ..write('theme: $theme, ')
+          ..write('customThemeColor: $customThemeColor, ')
           ..write('userIntervalMs: $userIntervalMs, ')
           ..write('minRequestIntervalMs: $minRequestIntervalMs, ')
           ..write('maxAccounts: $maxAccounts, ')
@@ -2542,6 +2587,7 @@ class AppSettingsEntry extends DataClass
   int get hashCode => Object.hash(
     id,
     theme,
+    customThemeColor,
     userIntervalMs,
     minRequestIntervalMs,
     maxAccounts,
@@ -2556,6 +2602,7 @@ class AppSettingsEntry extends DataClass
       (other is AppSettingsEntry &&
           other.id == this.id &&
           other.theme == this.theme &&
+          other.customThemeColor == this.customThemeColor &&
           other.userIntervalMs == this.userIntervalMs &&
           other.minRequestIntervalMs == this.minRequestIntervalMs &&
           other.maxAccounts == this.maxAccounts &&
@@ -2568,6 +2615,7 @@ class AppSettingsEntry extends DataClass
 class AppSettingsCompanion extends UpdateCompanion<AppSettingsEntry> {
   final Value<int> id;
   final Value<String> theme;
+  final Value<String?> customThemeColor;
   final Value<int> userIntervalMs;
   final Value<int> minRequestIntervalMs;
   final Value<int> maxAccounts;
@@ -2578,6 +2626,7 @@ class AppSettingsCompanion extends UpdateCompanion<AppSettingsEntry> {
   const AppSettingsCompanion({
     this.id = const Value.absent(),
     this.theme = const Value.absent(),
+    this.customThemeColor = const Value.absent(),
     this.userIntervalMs = const Value.absent(),
     this.minRequestIntervalMs = const Value.absent(),
     this.maxAccounts = const Value.absent(),
@@ -2589,6 +2638,7 @@ class AppSettingsCompanion extends UpdateCompanion<AppSettingsEntry> {
   AppSettingsCompanion.insert({
     this.id = const Value.absent(),
     this.theme = const Value.absent(),
+    this.customThemeColor = const Value.absent(),
     this.userIntervalMs = const Value.absent(),
     this.minRequestIntervalMs = const Value.absent(),
     this.maxAccounts = const Value.absent(),
@@ -2600,6 +2650,7 @@ class AppSettingsCompanion extends UpdateCompanion<AppSettingsEntry> {
   static Insertable<AppSettingsEntry> custom({
     Expression<int>? id,
     Expression<String>? theme,
+    Expression<String>? customThemeColor,
     Expression<int>? userIntervalMs,
     Expression<int>? minRequestIntervalMs,
     Expression<int>? maxAccounts,
@@ -2611,6 +2662,7 @@ class AppSettingsCompanion extends UpdateCompanion<AppSettingsEntry> {
     return RawValuesInsertable({
       if (id != null) 'id': id,
       if (theme != null) 'theme': theme,
+      if (customThemeColor != null) 'custom_theme_color': customThemeColor,
       if (userIntervalMs != null) 'user_interval_ms': userIntervalMs,
       if (minRequestIntervalMs != null)
         'min_request_interval_ms': minRequestIntervalMs,
@@ -2626,6 +2678,7 @@ class AppSettingsCompanion extends UpdateCompanion<AppSettingsEntry> {
   AppSettingsCompanion copyWith({
     Value<int>? id,
     Value<String>? theme,
+    Value<String?>? customThemeColor,
     Value<int>? userIntervalMs,
     Value<int>? minRequestIntervalMs,
     Value<int>? maxAccounts,
@@ -2637,6 +2690,7 @@ class AppSettingsCompanion extends UpdateCompanion<AppSettingsEntry> {
     return AppSettingsCompanion(
       id: id ?? this.id,
       theme: theme ?? this.theme,
+      customThemeColor: customThemeColor ?? this.customThemeColor,
       userIntervalMs: userIntervalMs ?? this.userIntervalMs,
       minRequestIntervalMs: minRequestIntervalMs ?? this.minRequestIntervalMs,
       maxAccounts: maxAccounts ?? this.maxAccounts,
@@ -2656,6 +2710,9 @@ class AppSettingsCompanion extends UpdateCompanion<AppSettingsEntry> {
     }
     if (theme.present) {
       map['theme'] = Variable<String>(theme.value);
+    }
+    if (customThemeColor.present) {
+      map['custom_theme_color'] = Variable<String>(customThemeColor.value);
     }
     if (userIntervalMs.present) {
       map['user_interval_ms'] = Variable<int>(userIntervalMs.value);
@@ -2690,6 +2747,7 @@ class AppSettingsCompanion extends UpdateCompanion<AppSettingsEntry> {
     return (StringBuffer('AppSettingsCompanion(')
           ..write('id: $id, ')
           ..write('theme: $theme, ')
+          ..write('customThemeColor: $customThemeColor, ')
           ..write('userIntervalMs: $userIntervalMs, ')
           ..write('minRequestIntervalMs: $minRequestIntervalMs, ')
           ..write('maxAccounts: $maxAccounts, ')
@@ -4152,6 +4210,7 @@ typedef $$AppSettingsTableCreateCompanionBuilder =
     AppSettingsCompanion Function({
       Value<int> id,
       Value<String> theme,
+      Value<String?> customThemeColor,
       Value<int> userIntervalMs,
       Value<int> minRequestIntervalMs,
       Value<int> maxAccounts,
@@ -4164,6 +4223,7 @@ typedef $$AppSettingsTableUpdateCompanionBuilder =
     AppSettingsCompanion Function({
       Value<int> id,
       Value<String> theme,
+      Value<String?> customThemeColor,
       Value<int> userIntervalMs,
       Value<int> minRequestIntervalMs,
       Value<int> maxAccounts,
@@ -4189,6 +4249,11 @@ class $$AppSettingsTableFilterComposer
 
   ColumnFilters<String> get theme => $composableBuilder(
     column: $table.theme,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get customThemeColor => $composableBuilder(
+    column: $table.customThemeColor,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -4247,6 +4312,11 @@ class $$AppSettingsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get customThemeColor => $composableBuilder(
+    column: $table.customThemeColor,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<int> get userIntervalMs => $composableBuilder(
     column: $table.userIntervalMs,
     builder: (column) => ColumnOrderings(column),
@@ -4297,6 +4367,11 @@ class $$AppSettingsTableAnnotationComposer
 
   GeneratedColumn<String> get theme =>
       $composableBuilder(column: $table.theme, builder: (column) => column);
+
+  GeneratedColumn<String> get customThemeColor => $composableBuilder(
+    column: $table.customThemeColor,
+    builder: (column) => column,
+  );
 
   GeneratedColumn<int> get userIntervalMs => $composableBuilder(
     column: $table.userIntervalMs,
@@ -4363,6 +4438,7 @@ class $$AppSettingsTableTableManager
               ({
                 Value<int> id = const Value.absent(),
                 Value<String> theme = const Value.absent(),
+                Value<String?> customThemeColor = const Value.absent(),
                 Value<int> userIntervalMs = const Value.absent(),
                 Value<int> minRequestIntervalMs = const Value.absent(),
                 Value<int> maxAccounts = const Value.absent(),
@@ -4373,6 +4449,7 @@ class $$AppSettingsTableTableManager
               }) => AppSettingsCompanion(
                 id: id,
                 theme: theme,
+                customThemeColor: customThemeColor,
                 userIntervalMs: userIntervalMs,
                 minRequestIntervalMs: minRequestIntervalMs,
                 maxAccounts: maxAccounts,
@@ -4385,6 +4462,7 @@ class $$AppSettingsTableTableManager
               ({
                 Value<int> id = const Value.absent(),
                 Value<String> theme = const Value.absent(),
+                Value<String?> customThemeColor = const Value.absent(),
                 Value<int> userIntervalMs = const Value.absent(),
                 Value<int> minRequestIntervalMs = const Value.absent(),
                 Value<int> maxAccounts = const Value.absent(),
@@ -4395,6 +4473,7 @@ class $$AppSettingsTableTableManager
               }) => AppSettingsCompanion.insert(
                 id: id,
                 theme: theme,
+                customThemeColor: customThemeColor,
                 userIntervalMs: userIntervalMs,
                 minRequestIntervalMs: minRequestIntervalMs,
                 maxAccounts: maxAccounts,

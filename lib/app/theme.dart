@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 enum AppThemeMode {
   simple,
   anime,
+  custom,
   system;
 
   static AppThemeMode fromString(String value) {
@@ -93,23 +94,42 @@ class AppTheme {
 
   // -- Helpers ---------------------------------------------------------------
 
-  static ThemeData lightTheme(AppThemeMode mode) {
+  static ThemeData customTheme(Color seedColor, {required bool isDark}) {
+    return ThemeData(
+      useMaterial3: true,
+      colorScheme: ColorScheme.fromSeed(
+        seedColor: seedColor,
+        brightness: isDark ? Brightness.dark : Brightness.light,
+      ),
+      appBarTheme: const AppBarTheme(centerTitle: true, elevation: 0),
+      inputDecorationTheme: const InputDecorationTheme(
+        border: OutlineInputBorder(),
+        filled: true,
+      ),
+    );
+  }
+
+  static ThemeData lightTheme(AppThemeMode mode, {Color? customColor}) {
     switch (mode) {
       case AppThemeMode.simple:
       case AppThemeMode.system:
         return simpleLightTheme();
       case AppThemeMode.anime:
         return animeLightTheme();
+      case AppThemeMode.custom:
+        return customTheme(customColor ?? _simpleSeedColor, isDark: false);
     }
   }
 
-  static ThemeData darkTheme(AppThemeMode mode) {
+  static ThemeData darkTheme(AppThemeMode mode, {Color? customColor}) {
     switch (mode) {
       case AppThemeMode.simple:
       case AppThemeMode.system:
         return simpleDarkTheme();
       case AppThemeMode.anime:
         return animeDarkTheme();
+      case AppThemeMode.custom:
+        return customTheme(customColor ?? _simpleSeedColor, isDark: true);
     }
   }
 
@@ -119,6 +139,7 @@ class AppTheme {
         return ThemeMode.system;
       case AppThemeMode.simple:
       case AppThemeMode.anime:
+      case AppThemeMode.custom:
         return ThemeMode.light;
     }
   }

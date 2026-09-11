@@ -24,7 +24,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
 
   @override
-  int get schemaVersion => 5;
+  int get schemaVersion => 6;
 
   @override
   MigrationStrategy get migration {
@@ -84,6 +84,12 @@ class AppDatabase extends _$AppDatabase {
         // fallback did whenever the re-read failed.
         if (from < 5) {
           await m.addColumn(courseTargets, courseTargets.zdxk);
+        }
+
+        // v5 → v6: custom theme color support. Allows users to define their
+        // own primary color via a color picker.
+        if (from < 6) {
+          await m.addColumn(appSettings, appSettings.customThemeColor);
         }
       },
       beforeOpen: (details) async {

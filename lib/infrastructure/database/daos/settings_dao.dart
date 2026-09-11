@@ -81,4 +81,9 @@ class SettingsDao extends DatabaseAccessor<AppDatabase>
   Future<void> setDebugModeEnabled(bool enabled) {
     return update_(AppSettingsCompanion(debugModeEnabled: Value(enabled)));
   }
+
+  /// Update the custom theme color (ARGB hex string).
+  Future<void> setCustomThemeColor(String? colorHex) {
+    return update_(AppSettingsCompanion(customThemeColor: Value(colorHex)));
+  }
 }

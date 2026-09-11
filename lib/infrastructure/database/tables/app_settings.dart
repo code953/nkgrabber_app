@@ -11,8 +11,11 @@ class AppSettings extends Table {
   /// Singleton row ID (always 1).
   IntColumn get id => integer().withDefault(const Constant(1))();
 
-  /// UI theme: 'simple', 'anime', or 'system'.
+  /// UI theme: 'simple', 'anime', 'system', or 'custom'.
   TextColumn get theme => text().withDefault(const Constant('system'))();
+
+  /// Custom theme seed color (ARGB hex string), null if not using custom theme.
+  TextColumn get customThemeColor => text().nullable()();
 
   /// User-configured request interval in milliseconds.
   IntColumn get userIntervalMs => integer().withDefault(const Constant(1000))();

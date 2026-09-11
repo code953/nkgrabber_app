@@ -52,6 +52,15 @@ class _SettingsBody extends ConsumerWidget {
           selected: AppThemeMode.fromString(settings.theme),
           onChanged: (mode) => notifier.setTheme(mode.name),
         ),
+        if (AppThemeMode.fromString(settings.theme) == AppThemeMode.custom)
+          _CustomColorSetting(
+            color: settings.customThemeColor != null
+                ? Color(int.parse(settings.customThemeColor!))
+                : null,
+            onChanged: (Color? color) => notifier.setCustomThemeColor(
+              color != null ? '0x${color.a.toInt().toRadixString(16).padLeft(2, '0')}${color.r.toInt().toRadixString(16).padLeft(2, '0')}${color.g.toInt().toRadixString(16).padLeft(2, '0')}${color.b.toInt().toRadixString(16).padLeft(2, '0')}' : null,
+            ),
+          ),
         const Divider(),
         const _SectionHeader(title: '抢课'),
         if (isRunning)
@@ -258,8 +267,148 @@ extension on AppThemeMode {
   String get label => switch (this) {
     AppThemeMode.simple => '简约 (蓝色)',
     AppThemeMode.anime => '二次元 (粉紫)',
+    AppThemeMode.custom => '自定义',
     AppThemeMode.system => '跟随系统',
   };
+}
+
+class _CustomColorSetting extends StatelessWidget {
+  const _CustomColorSetting({required this.color, required this.onChanged});
+
+  final Color? color;
+  final ValueChanged<Color?> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      leading: const Icon(Icons.color_lens_outlined),
+      title: const Text('自定义主题色'),
+      trailing: Container(
+        width: 48,
+        height: 48,
+        decoration: BoxDecoration(
+          color: color ?? Theme.of(context).colorScheme.primary,
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: Theme.of(context).colorScheme.outline,
+            width: 2,
+          ),
+        ),
+      ),
+      onTap: () => _showColorPicker(context),
+    );
+  }
+
+  Future<void> _showColorPicker(BuildContext context) async {
+    final currentColor = color ?? Theme.of(context).colorScheme.primary;
+    var selectedColor = currentColor;
+
+    final result = await showDialog<Color>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('选择主题色'),
+        content: SizedBox(
+          width: 300,
+          child: StatefulBuilder(
+            builder: (context, setState) => Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  height: 60,
+                  decoration: BoxDecoration(
+                    color: selectedColor,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                _ColorSlider(
+                  label: '色相',
+                  value: HSVColor.fromColor(selectedColor).hue,
+                  max: 360,
+                  onChanged: (v) => setState(() {
+                    final hsv = HSVColor.fromColor(selectedColor);
+                    selectedColor = hsv.withHue(v).toColor();
+                  }),
+                ),
+                _ColorSlider(
+                  label: '饱和度',
+                  value: HSVColor.fromColor(selectedColor).saturation * 100,
+                  max: 100,
+                  onChanged: (v) => setState(() {
+                    final hsv = HSVColor.fromColor(selectedColor);
+                    selectedColor = hsv.withSaturation(v / 100).toColor();
+                  }),
+                ),
+                _ColorSlider(
+                  label: '亮度',
+                  value: HSVColor.fromColor(selectedColor).value * 100,
+                  max: 100,
+                  onChanged: (v) => setState(() {
+                    final hsv = HSVColor.fromColor(selectedColor);
+                    selectedColor = hsv.withValue(v / 100).toColor();
+                  }),
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(selectedColor),
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+
+    if (result != null) {
+      onChanged(result);
+    }
+  }
+}
+
+class _ColorSlider extends StatelessWidget {
+  const _ColorSlider({
+    required this.label,
+    required this.value,
+    required this.max,
+    required this.onChanged,
+  });
+
+  final String label;
+  final double value;
+  final double max;
+  final ValueChanged<double> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        SizedBox(
+          width: 60,
+          child: Text(label, style: Theme.of(context).textTheme.bodyMedium),
+        ),
+        Expanded(
+          child: Slider(
+            value: value,
+            max: max,
+            onChanged: onChanged,
+          ),
+        ),
+        SizedBox(
+          width: 40,
+          child: Text(
+            value.round().toString(),
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 /// A slider-backed numeric setting row.
