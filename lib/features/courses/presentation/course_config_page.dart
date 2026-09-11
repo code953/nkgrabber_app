@@ -225,6 +225,7 @@ class _CoursePickerPage extends ConsumerWidget {
                   [
                     if (c.teacherName != null) c.teacherName!,
                     if (remaining != null) '余量 $remaining',
+                    'kmh: ${c.kmh}',
                   ].join(' · '),
                 ),
                 trailing: const Icon(Icons.add_circle_outline),
