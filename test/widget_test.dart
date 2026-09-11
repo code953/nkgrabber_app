@@ -726,7 +726,7 @@ void main() {
       await openCourses(tester);
 
       expect(find.text('还没有配置抢课目标，点击右下角添加'), findsNothing);
-      expect(find.text('春季选课 · 抢选'), findsNWidgets(2));
+      expect(find.textContaining('春季选课 · 抢选 · kmh:'), findsNWidgets(2));
 
       final cards = tester
           .widgetList<TargetListCard>(find.byType(TargetListCard))

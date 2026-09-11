@@ -1,7 +1,7 @@
 /// Tests for the campus response-parsing layer.
 ///
 /// Every fixture in this file is a verbatim excerpt of a real response captured
-/// from the live campus deployment (http://campus.nks.edu.cn) with a test
+/// from the live campus deployment (https://campus.nks.edu.cn) with a test
 /// account. They are the ground truth the parsers must satisfy — hand-written
 /// approximations are what let the original defects through.
 ///
@@ -387,7 +387,7 @@ void main() {
       // A bare GET /njs_3033/xsxk2 answers 403; these three params are what
       // make the course-selection host mint gdpk.
       final url = buildSsoUrl(
-        origin: 'http://campus.nks.edu.cn',
+        origin: 'https://campus.nks.edu.cn',
         app: const PortalApp(
           appUrl: '/njs_3033/xsxk2?a=a&ssoappid=APPID',
           apiUrl: '/gdpk',
@@ -396,12 +396,12 @@ void main() {
         session: const PortalSession(token: 'TOK', userId: '26411001'),
       );
 
-      expect(url, startsWith('http://campus.nks.edu.cn/njs_3033/xsxk2?a=a'));
+      expect(url, startsWith('https://campus.nks.edu.cn/njs_3033/xsxk2?a=a'));
       expect(url, contains('&token=TOK'));
       expect(url, contains('userid=26411001'));
       expect(
         url,
-        contains('apiUrl=http%3A%2F%2Fcampus.nks.edu.cn%2Fgdpk'),
+        contains('apiUrl=https%3A%2F%2Fcampus.nks.edu.cn%2Fgdpk'),
         reason: 'apiUrl is absolute and must be query-encoded',
       );
     });
@@ -410,7 +410,7 @@ void main() {
       // Silently building the wrong URL would surface as an opaque 403.
       expect(
         () => buildSsoUrl(
-          origin: 'http://campus.nks.edu.cn',
+          origin: 'https://campus.nks.edu.cn',
           app: const PortalApp(appUrl: '/x', apiUrl: '/y', ssolx: 1),
           session: const PortalSession(token: 'TOK', userId: '1'),
         ),
