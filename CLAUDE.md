@@ -81,7 +81,7 @@ Every page reads its data through providers; there are no stubs left.
 
 ## Key Technical Constraints
 
-- **One HTTP target only**: the campus system (`http://campus.nks.edu.cn`, form POST). There is no business backend — do not add one.
+- **One HTTPS target only**: the campus system (`https://campus.nks.edu.cn`, form POST). There is no business backend — do not add one.
 - **The User-Agent must not name the app.** It is a stock desktop-Chrome string in `campus_client_factory.dart`. The original ended in `NKgrabber/1.0`, which signed every request in the school's access log; nothing in the campus protocol keys off the UA, so identifying ourselves bought nothing. The header set also carries `X-Requested-With: XMLHttpRequest` and `Origin`, matching a capture of the portal's own XHR — whether the server enforces them is unknown, but a difference we could cheaply avoid is one we would otherwise have to rule out first if it ever starts refusing us. Pinned by a test.
 - **The campus wire format is not guessable — it was measured.** Every field name, body format, and envelope rule in `lib/infrastructure/campus/` came from probing the live deployment, and several are counter-intuitive:
   - `status` in the response envelope is an **HTTP-like int** (200), not a boolean. `status == true` is never satisfied.
