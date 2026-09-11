@@ -9,7 +9,7 @@ class AppConstants {
   /// Must match the `version:` in `pubspec.yaml` — a test asserts this. The
   /// About row used to carry its own string literal, which meant bumping the
   /// pubspec silently left the UI reporting the previous version to the user.
-  static const appVersion = '1.0.0-beta';
+  static const appVersion = '1.0.1';
 
   /// Campus system base URL.
   static const campusBaseUrl = 'https://campus.nks.edu.cn';
