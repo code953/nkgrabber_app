@@ -191,19 +191,26 @@ class _BatchPickerPage extends ConsumerWidget {
 }
 
 /// Step 2 of adding a target: pick courses within the batch.
-class _CoursePickerPage extends ConsumerWidget {
+class _CoursePickerPage extends ConsumerStatefulWidget {
   const _CoursePickerPage({required this.accountId, required this.batch});
 
   final String accountId;
   final SelectionBatch batch;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final key = (accountId: accountId, xkid: batch.xkid);
+  ConsumerState<_CoursePickerPage> createState() => _CoursePickerPageState();
+}
+
+class _CoursePickerPageState extends ConsumerState<_CoursePickerPage> {
+  final Set<String> _addedKmhs = {};
+
+  @override
+  Widget build(BuildContext context) {
+    final key = (accountId: widget.accountId, xkid: widget.batch.xkid);
     final courses = ref.watch(coursesProvider(key));
 
     return Scaffold(
-      appBar: AppBar(title: Text(batch.batchName)),
+      appBar: AppBar(title: Text(widget.batch.batchName)),
       body: courses.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => _ErrorState(
@@ -219,6 +226,7 @@ class _CoursePickerPage extends ConsumerWidget {
             itemBuilder: (context, i) {
               final c = list[i];
               final remaining = c.remaining;
+              final isAdded = _addedKmhs.contains(c.kmh);
               return ListTile(
                 title: Text(c.courseName),
                 subtitle: Text(
@@ -228,8 +236,11 @@ class _CoursePickerPage extends ConsumerWidget {
                     'kmh: ${c.kmh}',
                   ].join(' · '),
                 ),
-                trailing: const Icon(Icons.add_circle_outline),
-                onTap: () => _addTarget(context, ref, c),
+                trailing: Icon(
+                  isAdded ? Icons.check_circle : Icons.add_circle_outline,
+                  color: isAdded ? Theme.of(context).colorScheme.primary : null,
+                ),
+                onTap: isAdded ? null : () => _addTarget(context, c),
               );
             },
           );
@@ -240,25 +251,27 @@ class _CoursePickerPage extends ConsumerWidget {
 
   Future<void> _addTarget(
     BuildContext context,
-    WidgetRef ref,
     Course course,
   ) async {
-    final notifier = ref.read(courseTargetsProvider(accountId).notifier);
+    final notifier = ref.read(courseTargetsProvider(widget.accountId).notifier);
     final ok = await notifier.addTarget(
-      xkid: batch.xkid,
-      xkms: batch.xkms,
+      xkid: widget.batch.xkid,
+      xkms: widget.batch.xkms,
       kmh: course.kmh,
       courseName: course.courseName,
-      batchName: batch.batchName,
+      batchName: widget.batch.batchName,
       // Snapshotted here so the grab path never has to re-read it.
-      zdxk: batch.zdxk,
+      zdxk: widget.batch.zdxk,
       xbkid: course.xbkid,
     );
 
     if (!context.mounted) return;
+    if (ok) {
+      setState(() => _addedKmhs.add(course.kmh));
+    }
     final message = ok
         ? '已添加到抢课目标'
-        : (ref.read(courseTargetsProvider(accountId)).error ?? '添加失败');
+        : (ref.read(courseTargetsProvider(widget.accountId)).error ?? '添加失败');
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text(message)));
