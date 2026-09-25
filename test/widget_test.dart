@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
@@ -7,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:nkgrabber/app/app_background.dart';
 import 'package:nkgrabber/core/errors/app_exception.dart';
 import 'package:nkgrabber/core/logging/log_sanitizer.dart';
 import 'package:nkgrabber/core/security/secure_storage.dart';
@@ -22,6 +25,9 @@ import 'package:nkgrabber/features/grabber/domain/grab_log_entry.dart';
 import 'package:nkgrabber/features/grabber/domain/grab_log_export.dart';
 import 'package:nkgrabber/features/grabber/domain/grabber_state.dart';
 import 'package:nkgrabber/features/grabber/presentation/grabber_page.dart';
+import 'package:nkgrabber/features/settings/application/background_controller.dart';
+import 'package:nkgrabber/features/settings/presentation/settings_page.dart';
+import 'package:nkgrabber/infrastructure/background/background_image_service.dart';
 import 'package:nkgrabber/infrastructure/campus/campus_adapter.dart';
 import 'package:nkgrabber/infrastructure/campus/clock_sync.dart';
 import 'package:nkgrabber/infrastructure/campus/models/campus_models.dart';
@@ -62,6 +68,7 @@ class _FakeSecureStorage implements SecureStorage {
 Future<AppDatabase> _pumpApp(
   WidgetTester tester, {
   AppDatabase? database,
+  List<Override> overrides = const [],
 }) async {
   final db = database ?? AppDatabase(NativeDatabase.memory());
   addTearDown(db.close);
@@ -71,6 +78,7 @@ Future<AppDatabase> _pumpApp(
       overrides: [
         appDatabaseProvider.overrideWithValue(db),
         secureStorageProvider.overrideWithValue(_FakeSecureStorage()),
+        ...overrides,
       ],
       child: const NKGrabberApp(),
     ),
@@ -962,6 +970,108 @@ void main() {
       // than implying the 500 ms it shows is what will be used.
       expect(find.textContaining('实际按 1500 ms 执行'), findsOneWidget);
     });
+
+    testWidgets('a colour picked under a preset theme switches to custom', (
+      tester,
+    ) async {
+      // Default theme is `system`: the colour row must be reachable without
+      // first choosing 自定义 in the theme dialog.
+      final db = AppDatabase(NativeDatabase.memory());
+      await _pumpApp(tester, database: db);
+      await openSettings(tester);
+
+      await tester.tap(find.text('主题色'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const Key('theme-color-hex')),
+        'ff5722',
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('确定'));
+      await tester.pumpAndSettle();
+
+      final stored = await db.settingsDao.get();
+      expect(stored.theme, 'custom');
+      expect(stored.customThemeSeed, const Color(0xFFFF5722));
+      expect(find.text('#FF5722'), findsOneWidget);
+    });
+
+    testWidgets('a preset swatch is stored as the seed', (tester) async {
+      final db = AppDatabase(NativeDatabase.memory());
+      await _pumpApp(tester, database: db);
+      await openSettings(tester);
+
+      await tester.tap(find.text('主题色'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('#00897B'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('确定'));
+      await tester.pumpAndSettle();
+
+      expect(
+        (await db.settingsDao.get()).customThemeSeed,
+        const Color(0xFF00897B),
+      );
+    });
+
+    testWidgets('a background applies without closing what is open', (
+      tester,
+    ) async {
+      final dir = Directory.systemTemp.createTempSync('nkg_bg_widget_');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      Directory('${dir.path}/background').createSync();
+      File('${dir.path}/background/bg.png').writeAsBytesSync(
+        // 1×1 PNG; the widget tree is what is under test, not decoding.
+        base64Decode(
+          'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==',
+        ),
+      );
+
+      final db = AppDatabase(NativeDatabase.memory());
+      await _pumpApp(
+        tester,
+        database: db,
+        overrides: [
+          backgroundImageServiceProvider.overrideWithValue(
+            BackgroundImageService(baseDirectory: () async => dir),
+          ),
+        ],
+      );
+      await openSettings(tester);
+      AppBackground background() =>
+          tester.widget<AppBackground>(find.byType(AppBackground));
+      expect(background().image, isNull);
+
+      // A background is applied while a dialog is open — exactly the
+      // situation of a real import, which runs behind a progress dialog.
+      await tester.tap(find.text('主题色'));
+      await tester.pumpAndSettle();
+      expect(find.text('推荐颜色'), findsOneWidget);
+
+      final context = tester.element(find.byType(SettingsPage));
+      unawaited(
+        ProviderScope.containerOf(
+          context,
+        ).read(appSettingsProvider.notifier).setBackground(fileName: 'bg.png'),
+      );
+      await tester.pumpAndSettle();
+
+      expect(background().image?.path, endsWith('bg.png'));
+      // Pages are transparent over the picture, or it would never show.
+      expect(Theme.of(context).scaffoldBackgroundColor, Colors.transparent);
+      // A real import finishes behind its progress dialog, which must still
+      // be there to be closed.
+      expect(find.text('推荐颜色'), findsOneWidget);
+      await tester.tap(find.text('取消'));
+      await tester.pumpAndSettle();
+      expect(find.text('背景遮罩'), findsOneWidget);
+      expect(
+        Theme.of(
+          tester.element(find.byType(SettingsPage)),
+        ).scaffoldBackgroundColor,
+        Colors.transparent,
+      );
+    });
   });
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -982,7 +1092,11 @@ void main() {
         ('账号', '账号管理'),
         ('课程', '课程设置'),
         ('抢课', '准备就绪'),
-        ('设置', '导出诊断包'),
+        // The background row, not 导出诊断包: the appearance rows pushed the
+        // latter below what a lazy ListView builds in an 800×600 test window.
+        // It is also the one row that fronts a network feature, which is
+        // exactly what must not need the network to render.
+        ('设置', '背景图片'),
       ]) {
         await tester.tap(find.text(tab).first);
         await tester.pumpAndSettle();

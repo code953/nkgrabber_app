@@ -4,6 +4,8 @@
 /// instances should persist for the entire app lifecycle.
 library;
 
+import 'dart:ui' show Color;
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nkgrabber/core/security/secure_storage.dart';
 import 'package:nkgrabber/core/security/secure_storage_impl.dart';
@@ -107,4 +109,46 @@ class AppSettingsNotifier extends AsyncNotifier<AppSettingsEntry> {
   /// Persist the custom theme color (ARGB hex string).
   Future<void> setCustomThemeColor(String? colorHex) =>
       _apply((d) => d.setCustomThemeColor(colorHex));
+
+  /// Switch to the custom theme seeded with [color].
+  Future<void> setCustomTheme(Color color) =>
+      _apply((d) => d.setCustomTheme(encodeThemeColor(color)));
+
+  /// Point the background at a stored file; see [SettingsDao.setBackground].
+  Future<void> setBackground({
+    required String fileName,
+    String? url,
+    String? client,
+    Color? seedColor,
+  }) => _apply(
+    (d) => d.setBackground(
+      fileName: fileName,
+      url: url,
+      client: client,
+      seedColorHex: seedColor == null ? null : encodeThemeColor(seedColor),
+    ),
+  );
+
+  /// Remove the background image.
+  Future<void> clearBackground() => _apply((d) => d.clearBackground());
+
+  /// Persist the background scrim opacity (0–100).
+  Future<void> setBackgroundOverlayPercent(int percent) =>
+      _apply((d) => d.setBackgroundOverlayPercent(percent));
+}
+
+/// The storage form of a theme colour: its ARGB value as a decimal string.
+///
+/// Not `Color.value` — deprecated, and the reason a saved colour once read
+/// back as all zeros.
+String encodeThemeColor(Color color) => color.toARGB32().toString();
+
+extension AppSettingsThemeColor on AppSettingsEntry {
+  /// The stored custom theme seed, or null if none (or unreadable).
+  Color? get customThemeSeed {
+    final raw = customThemeColor;
+    if (raw == null) return null;
+    final argb = int.tryParse(raw);
+    return argb == null ? null : Color(argb);
+  }
 }

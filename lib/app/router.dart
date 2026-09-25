@@ -24,6 +24,10 @@ class AppRoutes {
 }
 
 /// Create the app router.
+///
+/// The tabs switch without a transition. Tabs are not a push, and with a
+/// background image the scaffolds are transparent — a cross-route animation
+/// would draw the outgoing and incoming page on top of each other.
 GoRouter createRouter() {
   return GoRouter(
     initialLocation: AppRoutes.accounts,
@@ -33,19 +37,23 @@ GoRouter createRouter() {
         routes: [
           GoRoute(
             path: AppRoutes.accounts,
-            builder: (context, state) => const AccountsPage(),
+            pageBuilder: (context, state) =>
+                const NoTransitionPage(child: AccountsPage()),
           ),
           GoRoute(
             path: AppRoutes.courses,
-            builder: (context, state) => const CourseConfigPage(),
+            pageBuilder: (context, state) =>
+                const NoTransitionPage(child: CourseConfigPage()),
           ),
           GoRoute(
             path: AppRoutes.grabber,
-            builder: (context, state) => const GrabberPage(),
+            pageBuilder: (context, state) =>
+                const NoTransitionPage(child: GrabberPage()),
           ),
           GoRoute(
             path: AppRoutes.settings,
-            builder: (context, state) => const SettingsPage(),
+            pageBuilder: (context, state) =>
+                const NoTransitionPage(child: SettingsPage()),
           ),
         ],
       ),

@@ -2145,6 +2145,51 @@ class $AppSettingsTable extends AppSettings
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _backgroundImageFileMeta =
+      const VerificationMeta('backgroundImageFile');
+  @override
+  late final GeneratedColumn<String> backgroundImageFile =
+      GeneratedColumn<String>(
+        'background_image_file',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      );
+  static const VerificationMeta _backgroundImageUrlMeta =
+      const VerificationMeta('backgroundImageUrl');
+  @override
+  late final GeneratedColumn<String> backgroundImageUrl =
+      GeneratedColumn<String>(
+        'background_image_url',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      );
+  static const VerificationMeta _backgroundImageClientMeta =
+      const VerificationMeta('backgroundImageClient');
+  @override
+  late final GeneratedColumn<String> backgroundImageClient =
+      GeneratedColumn<String>(
+        'background_image_client',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      );
+  static const VerificationMeta _backgroundOverlayPercentMeta =
+      const VerificationMeta('backgroundOverlayPercent');
+  @override
+  late final GeneratedColumn<int> backgroundOverlayPercent =
+      GeneratedColumn<int>(
+        'background_overlay_percent',
+        aliasedName,
+        false,
+        type: DriftSqlType.int,
+        requiredDuringInsert: false,
+        defaultValue: const Constant(60),
+      );
   static const VerificationMeta _userIntervalMsMeta = const VerificationMeta(
     'userIntervalMs',
   );
@@ -2233,6 +2278,10 @@ class $AppSettingsTable extends AppSettings
     id,
     theme,
     customThemeColor,
+    backgroundImageFile,
+    backgroundImageUrl,
+    backgroundImageClient,
+    backgroundOverlayPercent,
     userIntervalMs,
     minRequestIntervalMs,
     maxAccounts,
@@ -2268,6 +2317,42 @@ class $AppSettingsTable extends AppSettings
         customThemeColor.isAcceptableOrUnknown(
           data['custom_theme_color']!,
           _customThemeColorMeta,
+        ),
+      );
+    }
+    if (data.containsKey('background_image_file')) {
+      context.handle(
+        _backgroundImageFileMeta,
+        backgroundImageFile.isAcceptableOrUnknown(
+          data['background_image_file']!,
+          _backgroundImageFileMeta,
+        ),
+      );
+    }
+    if (data.containsKey('background_image_url')) {
+      context.handle(
+        _backgroundImageUrlMeta,
+        backgroundImageUrl.isAcceptableOrUnknown(
+          data['background_image_url']!,
+          _backgroundImageUrlMeta,
+        ),
+      );
+    }
+    if (data.containsKey('background_image_client')) {
+      context.handle(
+        _backgroundImageClientMeta,
+        backgroundImageClient.isAcceptableOrUnknown(
+          data['background_image_client']!,
+          _backgroundImageClientMeta,
+        ),
+      );
+    }
+    if (data.containsKey('background_overlay_percent')) {
+      context.handle(
+        _backgroundOverlayPercentMeta,
+        backgroundOverlayPercent.isAcceptableOrUnknown(
+          data['background_overlay_percent']!,
+          _backgroundOverlayPercentMeta,
         ),
       );
     }
@@ -2349,6 +2434,22 @@ class $AppSettingsTable extends AppSettings
         DriftSqlType.string,
         data['${effectivePrefix}custom_theme_color'],
       ),
+      backgroundImageFile: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}background_image_file'],
+      ),
+      backgroundImageUrl: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}background_image_url'],
+      ),
+      backgroundImageClient: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}background_image_client'],
+      ),
+      backgroundOverlayPercent: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}background_overlay_percent'],
+      )!,
       userIntervalMs: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}user_interval_ms'],
@@ -2397,6 +2498,32 @@ class AppSettingsEntry extends DataClass
   /// Custom theme seed color (ARGB hex string), null if not using custom theme.
   final String? customThemeColor;
 
+  /// File name of the background image inside the app's background directory,
+  /// or null for no background.
+  ///
+  /// A bare name, never an absolute path: iOS moves the app container on
+  /// every update, so a stored absolute path would point at nothing after the
+  /// first upgrade.
+  final String? backgroundImageFile;
+
+  /// Image-host URL the background was downloaded from; null for a local file.
+  ///
+  /// Kept so the user can re-fetch — random-image APIs return a new picture
+  /// on every request, which is the whole reason the result is cached on disk
+  /// rather than loaded from the network on each launch.
+  final String? backgroundImageUrl;
+
+  /// Which kind of device to present as when fetching [backgroundImageUrl]:
+  /// null (follow the platform), 'desktop', or 'mobile'.
+  ///
+  /// Many image hosts serve a landscape picture to desktop browsers and a
+  /// portrait one to phones, deciding by User-Agent.
+  final String? backgroundImageClient;
+
+  /// Opacity (0–100) of the surface-coloured scrim drawn over the background
+  /// image so text stays readable.
+  final int backgroundOverlayPercent;
+
   /// User-configured request interval in milliseconds.
   final int userIntervalMs;
 
@@ -2432,6 +2559,10 @@ class AppSettingsEntry extends DataClass
     required this.id,
     required this.theme,
     this.customThemeColor,
+    this.backgroundImageFile,
+    this.backgroundImageUrl,
+    this.backgroundImageClient,
+    required this.backgroundOverlayPercent,
     required this.userIntervalMs,
     required this.minRequestIntervalMs,
     required this.maxAccounts,
@@ -2448,6 +2579,16 @@ class AppSettingsEntry extends DataClass
     if (!nullToAbsent || customThemeColor != null) {
       map['custom_theme_color'] = Variable<String>(customThemeColor);
     }
+    if (!nullToAbsent || backgroundImageFile != null) {
+      map['background_image_file'] = Variable<String>(backgroundImageFile);
+    }
+    if (!nullToAbsent || backgroundImageUrl != null) {
+      map['background_image_url'] = Variable<String>(backgroundImageUrl);
+    }
+    if (!nullToAbsent || backgroundImageClient != null) {
+      map['background_image_client'] = Variable<String>(backgroundImageClient);
+    }
+    map['background_overlay_percent'] = Variable<int>(backgroundOverlayPercent);
     map['user_interval_ms'] = Variable<int>(userIntervalMs);
     map['min_request_interval_ms'] = Variable<int>(minRequestIntervalMs);
     map['max_accounts'] = Variable<int>(maxAccounts);
@@ -2465,6 +2606,16 @@ class AppSettingsEntry extends DataClass
       customThemeColor: customThemeColor == null && nullToAbsent
           ? const Value.absent()
           : Value(customThemeColor),
+      backgroundImageFile: backgroundImageFile == null && nullToAbsent
+          ? const Value.absent()
+          : Value(backgroundImageFile),
+      backgroundImageUrl: backgroundImageUrl == null && nullToAbsent
+          ? const Value.absent()
+          : Value(backgroundImageUrl),
+      backgroundImageClient: backgroundImageClient == null && nullToAbsent
+          ? const Value.absent()
+          : Value(backgroundImageClient),
+      backgroundOverlayPercent: Value(backgroundOverlayPercent),
       userIntervalMs: Value(userIntervalMs),
       minRequestIntervalMs: Value(minRequestIntervalMs),
       maxAccounts: Value(maxAccounts),
@@ -2484,6 +2635,18 @@ class AppSettingsEntry extends DataClass
       id: serializer.fromJson<int>(json['id']),
       theme: serializer.fromJson<String>(json['theme']),
       customThemeColor: serializer.fromJson<String?>(json['customThemeColor']),
+      backgroundImageFile: serializer.fromJson<String?>(
+        json['backgroundImageFile'],
+      ),
+      backgroundImageUrl: serializer.fromJson<String?>(
+        json['backgroundImageUrl'],
+      ),
+      backgroundImageClient: serializer.fromJson<String?>(
+        json['backgroundImageClient'],
+      ),
+      backgroundOverlayPercent: serializer.fromJson<int>(
+        json['backgroundOverlayPercent'],
+      ),
       userIntervalMs: serializer.fromJson<int>(json['userIntervalMs']),
       minRequestIntervalMs: serializer.fromJson<int>(
         json['minRequestIntervalMs'],
@@ -2504,6 +2667,14 @@ class AppSettingsEntry extends DataClass
       'id': serializer.toJson<int>(id),
       'theme': serializer.toJson<String>(theme),
       'customThemeColor': serializer.toJson<String?>(customThemeColor),
+      'backgroundImageFile': serializer.toJson<String?>(backgroundImageFile),
+      'backgroundImageUrl': serializer.toJson<String?>(backgroundImageUrl),
+      'backgroundImageClient': serializer.toJson<String?>(
+        backgroundImageClient,
+      ),
+      'backgroundOverlayPercent': serializer.toJson<int>(
+        backgroundOverlayPercent,
+      ),
       'userIntervalMs': serializer.toJson<int>(userIntervalMs),
       'minRequestIntervalMs': serializer.toJson<int>(minRequestIntervalMs),
       'maxAccounts': serializer.toJson<int>(maxAccounts),
@@ -2518,6 +2689,10 @@ class AppSettingsEntry extends DataClass
     int? id,
     String? theme,
     Value<String?> customThemeColor = const Value.absent(),
+    Value<String?> backgroundImageFile = const Value.absent(),
+    Value<String?> backgroundImageUrl = const Value.absent(),
+    Value<String?> backgroundImageClient = const Value.absent(),
+    int? backgroundOverlayPercent,
     int? userIntervalMs,
     int? minRequestIntervalMs,
     int? maxAccounts,
@@ -2531,6 +2706,17 @@ class AppSettingsEntry extends DataClass
     customThemeColor: customThemeColor.present
         ? customThemeColor.value
         : this.customThemeColor,
+    backgroundImageFile: backgroundImageFile.present
+        ? backgroundImageFile.value
+        : this.backgroundImageFile,
+    backgroundImageUrl: backgroundImageUrl.present
+        ? backgroundImageUrl.value
+        : this.backgroundImageUrl,
+    backgroundImageClient: backgroundImageClient.present
+        ? backgroundImageClient.value
+        : this.backgroundImageClient,
+    backgroundOverlayPercent:
+        backgroundOverlayPercent ?? this.backgroundOverlayPercent,
     userIntervalMs: userIntervalMs ?? this.userIntervalMs,
     minRequestIntervalMs: minRequestIntervalMs ?? this.minRequestIntervalMs,
     maxAccounts: maxAccounts ?? this.maxAccounts,
@@ -2546,6 +2732,18 @@ class AppSettingsEntry extends DataClass
       customThemeColor: data.customThemeColor.present
           ? data.customThemeColor.value
           : this.customThemeColor,
+      backgroundImageFile: data.backgroundImageFile.present
+          ? data.backgroundImageFile.value
+          : this.backgroundImageFile,
+      backgroundImageUrl: data.backgroundImageUrl.present
+          ? data.backgroundImageUrl.value
+          : this.backgroundImageUrl,
+      backgroundImageClient: data.backgroundImageClient.present
+          ? data.backgroundImageClient.value
+          : this.backgroundImageClient,
+      backgroundOverlayPercent: data.backgroundOverlayPercent.present
+          ? data.backgroundOverlayPercent.value
+          : this.backgroundOverlayPercent,
       userIntervalMs: data.userIntervalMs.present
           ? data.userIntervalMs.value
           : this.userIntervalMs,
@@ -2572,6 +2770,10 @@ class AppSettingsEntry extends DataClass
           ..write('id: $id, ')
           ..write('theme: $theme, ')
           ..write('customThemeColor: $customThemeColor, ')
+          ..write('backgroundImageFile: $backgroundImageFile, ')
+          ..write('backgroundImageUrl: $backgroundImageUrl, ')
+          ..write('backgroundImageClient: $backgroundImageClient, ')
+          ..write('backgroundOverlayPercent: $backgroundOverlayPercent, ')
           ..write('userIntervalMs: $userIntervalMs, ')
           ..write('minRequestIntervalMs: $minRequestIntervalMs, ')
           ..write('maxAccounts: $maxAccounts, ')
@@ -2588,6 +2790,10 @@ class AppSettingsEntry extends DataClass
     id,
     theme,
     customThemeColor,
+    backgroundImageFile,
+    backgroundImageUrl,
+    backgroundImageClient,
+    backgroundOverlayPercent,
     userIntervalMs,
     minRequestIntervalMs,
     maxAccounts,
@@ -2603,6 +2809,10 @@ class AppSettingsEntry extends DataClass
           other.id == this.id &&
           other.theme == this.theme &&
           other.customThemeColor == this.customThemeColor &&
+          other.backgroundImageFile == this.backgroundImageFile &&
+          other.backgroundImageUrl == this.backgroundImageUrl &&
+          other.backgroundImageClient == this.backgroundImageClient &&
+          other.backgroundOverlayPercent == this.backgroundOverlayPercent &&
           other.userIntervalMs == this.userIntervalMs &&
           other.minRequestIntervalMs == this.minRequestIntervalMs &&
           other.maxAccounts == this.maxAccounts &&
@@ -2616,6 +2826,10 @@ class AppSettingsCompanion extends UpdateCompanion<AppSettingsEntry> {
   final Value<int> id;
   final Value<String> theme;
   final Value<String?> customThemeColor;
+  final Value<String?> backgroundImageFile;
+  final Value<String?> backgroundImageUrl;
+  final Value<String?> backgroundImageClient;
+  final Value<int> backgroundOverlayPercent;
   final Value<int> userIntervalMs;
   final Value<int> minRequestIntervalMs;
   final Value<int> maxAccounts;
@@ -2627,6 +2841,10 @@ class AppSettingsCompanion extends UpdateCompanion<AppSettingsEntry> {
     this.id = const Value.absent(),
     this.theme = const Value.absent(),
     this.customThemeColor = const Value.absent(),
+    this.backgroundImageFile = const Value.absent(),
+    this.backgroundImageUrl = const Value.absent(),
+    this.backgroundImageClient = const Value.absent(),
+    this.backgroundOverlayPercent = const Value.absent(),
     this.userIntervalMs = const Value.absent(),
     this.minRequestIntervalMs = const Value.absent(),
     this.maxAccounts = const Value.absent(),
@@ -2639,6 +2857,10 @@ class AppSettingsCompanion extends UpdateCompanion<AppSettingsEntry> {
     this.id = const Value.absent(),
     this.theme = const Value.absent(),
     this.customThemeColor = const Value.absent(),
+    this.backgroundImageFile = const Value.absent(),
+    this.backgroundImageUrl = const Value.absent(),
+    this.backgroundImageClient = const Value.absent(),
+    this.backgroundOverlayPercent = const Value.absent(),
     this.userIntervalMs = const Value.absent(),
     this.minRequestIntervalMs = const Value.absent(),
     this.maxAccounts = const Value.absent(),
@@ -2651,6 +2873,10 @@ class AppSettingsCompanion extends UpdateCompanion<AppSettingsEntry> {
     Expression<int>? id,
     Expression<String>? theme,
     Expression<String>? customThemeColor,
+    Expression<String>? backgroundImageFile,
+    Expression<String>? backgroundImageUrl,
+    Expression<String>? backgroundImageClient,
+    Expression<int>? backgroundOverlayPercent,
     Expression<int>? userIntervalMs,
     Expression<int>? minRequestIntervalMs,
     Expression<int>? maxAccounts,
@@ -2663,6 +2889,14 @@ class AppSettingsCompanion extends UpdateCompanion<AppSettingsEntry> {
       if (id != null) 'id': id,
       if (theme != null) 'theme': theme,
       if (customThemeColor != null) 'custom_theme_color': customThemeColor,
+      if (backgroundImageFile != null)
+        'background_image_file': backgroundImageFile,
+      if (backgroundImageUrl != null)
+        'background_image_url': backgroundImageUrl,
+      if (backgroundImageClient != null)
+        'background_image_client': backgroundImageClient,
+      if (backgroundOverlayPercent != null)
+        'background_overlay_percent': backgroundOverlayPercent,
       if (userIntervalMs != null) 'user_interval_ms': userIntervalMs,
       if (minRequestIntervalMs != null)
         'min_request_interval_ms': minRequestIntervalMs,
@@ -2679,6 +2913,10 @@ class AppSettingsCompanion extends UpdateCompanion<AppSettingsEntry> {
     Value<int>? id,
     Value<String>? theme,
     Value<String?>? customThemeColor,
+    Value<String?>? backgroundImageFile,
+    Value<String?>? backgroundImageUrl,
+    Value<String?>? backgroundImageClient,
+    Value<int>? backgroundOverlayPercent,
     Value<int>? userIntervalMs,
     Value<int>? minRequestIntervalMs,
     Value<int>? maxAccounts,
@@ -2691,6 +2929,12 @@ class AppSettingsCompanion extends UpdateCompanion<AppSettingsEntry> {
       id: id ?? this.id,
       theme: theme ?? this.theme,
       customThemeColor: customThemeColor ?? this.customThemeColor,
+      backgroundImageFile: backgroundImageFile ?? this.backgroundImageFile,
+      backgroundImageUrl: backgroundImageUrl ?? this.backgroundImageUrl,
+      backgroundImageClient:
+          backgroundImageClient ?? this.backgroundImageClient,
+      backgroundOverlayPercent:
+          backgroundOverlayPercent ?? this.backgroundOverlayPercent,
       userIntervalMs: userIntervalMs ?? this.userIntervalMs,
       minRequestIntervalMs: minRequestIntervalMs ?? this.minRequestIntervalMs,
       maxAccounts: maxAccounts ?? this.maxAccounts,
@@ -2713,6 +2957,24 @@ class AppSettingsCompanion extends UpdateCompanion<AppSettingsEntry> {
     }
     if (customThemeColor.present) {
       map['custom_theme_color'] = Variable<String>(customThemeColor.value);
+    }
+    if (backgroundImageFile.present) {
+      map['background_image_file'] = Variable<String>(
+        backgroundImageFile.value,
+      );
+    }
+    if (backgroundImageUrl.present) {
+      map['background_image_url'] = Variable<String>(backgroundImageUrl.value);
+    }
+    if (backgroundImageClient.present) {
+      map['background_image_client'] = Variable<String>(
+        backgroundImageClient.value,
+      );
+    }
+    if (backgroundOverlayPercent.present) {
+      map['background_overlay_percent'] = Variable<int>(
+        backgroundOverlayPercent.value,
+      );
     }
     if (userIntervalMs.present) {
       map['user_interval_ms'] = Variable<int>(userIntervalMs.value);
@@ -2748,6 +3010,10 @@ class AppSettingsCompanion extends UpdateCompanion<AppSettingsEntry> {
           ..write('id: $id, ')
           ..write('theme: $theme, ')
           ..write('customThemeColor: $customThemeColor, ')
+          ..write('backgroundImageFile: $backgroundImageFile, ')
+          ..write('backgroundImageUrl: $backgroundImageUrl, ')
+          ..write('backgroundImageClient: $backgroundImageClient, ')
+          ..write('backgroundOverlayPercent: $backgroundOverlayPercent, ')
           ..write('userIntervalMs: $userIntervalMs, ')
           ..write('minRequestIntervalMs: $minRequestIntervalMs, ')
           ..write('maxAccounts: $maxAccounts, ')
@@ -4211,6 +4477,10 @@ typedef $$AppSettingsTableCreateCompanionBuilder =
       Value<int> id,
       Value<String> theme,
       Value<String?> customThemeColor,
+      Value<String?> backgroundImageFile,
+      Value<String?> backgroundImageUrl,
+      Value<String?> backgroundImageClient,
+      Value<int> backgroundOverlayPercent,
       Value<int> userIntervalMs,
       Value<int> minRequestIntervalMs,
       Value<int> maxAccounts,
@@ -4224,6 +4494,10 @@ typedef $$AppSettingsTableUpdateCompanionBuilder =
       Value<int> id,
       Value<String> theme,
       Value<String?> customThemeColor,
+      Value<String?> backgroundImageFile,
+      Value<String?> backgroundImageUrl,
+      Value<String?> backgroundImageClient,
+      Value<int> backgroundOverlayPercent,
       Value<int> userIntervalMs,
       Value<int> minRequestIntervalMs,
       Value<int> maxAccounts,
@@ -4254,6 +4528,26 @@ class $$AppSettingsTableFilterComposer
 
   ColumnFilters<String> get customThemeColor => $composableBuilder(
     column: $table.customThemeColor,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get backgroundImageFile => $composableBuilder(
+    column: $table.backgroundImageFile,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get backgroundImageUrl => $composableBuilder(
+    column: $table.backgroundImageUrl,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get backgroundImageClient => $composableBuilder(
+    column: $table.backgroundImageClient,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get backgroundOverlayPercent => $composableBuilder(
+    column: $table.backgroundOverlayPercent,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -4317,6 +4611,26 @@ class $$AppSettingsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get backgroundImageFile => $composableBuilder(
+    column: $table.backgroundImageFile,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get backgroundImageUrl => $composableBuilder(
+    column: $table.backgroundImageUrl,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get backgroundImageClient => $composableBuilder(
+    column: $table.backgroundImageClient,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get backgroundOverlayPercent => $composableBuilder(
+    column: $table.backgroundOverlayPercent,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<int> get userIntervalMs => $composableBuilder(
     column: $table.userIntervalMs,
     builder: (column) => ColumnOrderings(column),
@@ -4370,6 +4684,26 @@ class $$AppSettingsTableAnnotationComposer
 
   GeneratedColumn<String> get customThemeColor => $composableBuilder(
     column: $table.customThemeColor,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get backgroundImageFile => $composableBuilder(
+    column: $table.backgroundImageFile,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get backgroundImageUrl => $composableBuilder(
+    column: $table.backgroundImageUrl,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get backgroundImageClient => $composableBuilder(
+    column: $table.backgroundImageClient,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get backgroundOverlayPercent => $composableBuilder(
+    column: $table.backgroundOverlayPercent,
     builder: (column) => column,
   );
 
@@ -4439,6 +4773,10 @@ class $$AppSettingsTableTableManager
                 Value<int> id = const Value.absent(),
                 Value<String> theme = const Value.absent(),
                 Value<String?> customThemeColor = const Value.absent(),
+                Value<String?> backgroundImageFile = const Value.absent(),
+                Value<String?> backgroundImageUrl = const Value.absent(),
+                Value<String?> backgroundImageClient = const Value.absent(),
+                Value<int> backgroundOverlayPercent = const Value.absent(),
                 Value<int> userIntervalMs = const Value.absent(),
                 Value<int> minRequestIntervalMs = const Value.absent(),
                 Value<int> maxAccounts = const Value.absent(),
@@ -4450,6 +4788,10 @@ class $$AppSettingsTableTableManager
                 id: id,
                 theme: theme,
                 customThemeColor: customThemeColor,
+                backgroundImageFile: backgroundImageFile,
+                backgroundImageUrl: backgroundImageUrl,
+                backgroundImageClient: backgroundImageClient,
+                backgroundOverlayPercent: backgroundOverlayPercent,
                 userIntervalMs: userIntervalMs,
                 minRequestIntervalMs: minRequestIntervalMs,
                 maxAccounts: maxAccounts,
@@ -4463,6 +4805,10 @@ class $$AppSettingsTableTableManager
                 Value<int> id = const Value.absent(),
                 Value<String> theme = const Value.absent(),
                 Value<String?> customThemeColor = const Value.absent(),
+                Value<String?> backgroundImageFile = const Value.absent(),
+                Value<String?> backgroundImageUrl = const Value.absent(),
+                Value<String?> backgroundImageClient = const Value.absent(),
+                Value<int> backgroundOverlayPercent = const Value.absent(),
                 Value<int> userIntervalMs = const Value.absent(),
                 Value<int> minRequestIntervalMs = const Value.absent(),
                 Value<int> maxAccounts = const Value.absent(),
@@ -4474,6 +4820,10 @@ class $$AppSettingsTableTableManager
                 id: id,
                 theme: theme,
                 customThemeColor: customThemeColor,
+                backgroundImageFile: backgroundImageFile,
+                backgroundImageUrl: backgroundImageUrl,
+                backgroundImageClient: backgroundImageClient,
+                backgroundOverlayPercent: backgroundOverlayPercent,
                 userIntervalMs: userIntervalMs,
                 minRequestIntervalMs: minRequestIntervalMs,
                 maxAccounts: maxAccounts,

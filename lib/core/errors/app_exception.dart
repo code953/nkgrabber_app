@@ -77,6 +77,13 @@ class StorageException extends AppException {
 
 enum StorageExceptionType { readFailed, writeFailed, deleteFailed, unavailable }
 
+// -- Background image errors -------------------------------------------------
+
+/// A background image could not be imported. [message] is user-facing.
+class BackgroundImageException extends AppException {
+  const BackgroundImageException({required super.message, super.originalError});
+}
+
 // -- Unknown -----------------------------------------------------------------
 
 class UnknownException extends AppException {

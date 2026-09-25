@@ -1,4 +1,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Declared here rather than left to arrive through file_saver's
+         manifest merge: the campus client and the background downloader both
+         depend on it, and a dependency swap should not silently cut the
+         release build off the network. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
     <application
         android:label="NKgrabber"
         android:name="${applicationName}"

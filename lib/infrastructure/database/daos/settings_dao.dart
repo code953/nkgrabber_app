@@ -86,4 +86,57 @@ class SettingsDao extends DatabaseAccessor<AppDatabase>
   Future<void> setCustomThemeColor(String? colorHex) {
     return update_(AppSettingsCompanion(customThemeColor: Value(colorHex)));
   }
+
+  /// Switch to the custom theme with [colorHex] as its seed, in one write.
+  Future<void> setCustomTheme(String colorHex) {
+    return update_(
+      AppSettingsCompanion(
+        theme: const Value('custom'),
+        customThemeColor: Value(colorHex),
+      ),
+    );
+  }
+
+  /// Point the background at [fileName], recording where it came from.
+  ///
+  /// When [seedColorHex] is given the theme switches to custom with that seed
+  /// in the same write, so the colours never lag a frame behind the picture.
+  Future<void> setBackground({
+    required String fileName,
+    String? url,
+    String? client,
+    String? seedColorHex,
+  }) {
+    return update_(
+      AppSettingsCompanion(
+        backgroundImageFile: Value(fileName),
+        backgroundImageUrl: Value(url),
+        backgroundImageClient: Value(client),
+        theme: seedColorHex == null
+            ? const Value.absent()
+            : const Value('custom'),
+        customThemeColor: seedColorHex == null
+            ? const Value.absent()
+            : Value(seedColorHex),
+      ),
+    );
+  }
+
+  /// Remove the background image. The theme colour is left as it is.
+  Future<void> clearBackground() {
+    return update_(
+      const AppSettingsCompanion(
+        backgroundImageFile: Value(null),
+        backgroundImageUrl: Value(null),
+        backgroundImageClient: Value(null),
+      ),
+    );
+  }
+
+  /// Update the opacity (0–100) of the scrim over the background image.
+  Future<void> setBackgroundOverlayPercent(int percent) {
+    return update_(
+      AppSettingsCompanion(backgroundOverlayPercent: Value(percent)),
+    );
+  }
 }

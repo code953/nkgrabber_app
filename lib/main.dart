@@ -9,11 +9,13 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:nkgrabber/app/app_background.dart';
 import 'package:nkgrabber/app/router.dart';
 import 'package:nkgrabber/app/theme.dart';
 import 'package:nkgrabber/core/logging/app_logger.dart';
 import 'package:nkgrabber/core/logging/log_sanitizer.dart';
 import 'package:nkgrabber/features/grabber/application/grabber_controller.dart';
+import 'package:nkgrabber/features/settings/application/background_controller.dart';
 import 'package:nkgrabber/infrastructure/providers.dart';
 import 'package:nkgrabber/l10n/app_localizations.dart';
 
@@ -81,17 +83,28 @@ class _NKGrabberAppState extends ConsumerState<NKGrabberApp> {
     final themeMode = AppThemeMode.fromString(
       settings?.theme ?? AppThemeMode.system.name,
     );
-    final customColor = settings?.customThemeColor != null
-        ? Color(int.parse(settings!.customThemeColor!))
-        : null;
+    final customColor = settings?.customThemeSeed;
+    final background = ref.watch(backgroundImageFileProvider).valueOrNull;
+
+    var light = AppTheme.lightTheme(themeMode, customColor: customColor);
+    var dark = AppTheme.darkTheme(themeMode, customColor: customColor);
+    if (background != null) {
+      light = AppTheme.translucent(light);
+      dark = AppTheme.translucent(dark);
+    }
 
     return MaterialApp.router(
       title: 'NKgrabber',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.lightTheme(themeMode, customColor: customColor),
-      darkTheme: AppTheme.darkTheme(themeMode, customColor: customColor),
+      theme: light,
+      darkTheme: dark,
       themeMode: AppTheme.themeMode(themeMode),
       routerConfig: _router,
+      builder: (context, child) => AppBackground(
+        image: background,
+        overlayPercent: settings?.backgroundOverlayPercent ?? 60,
+        child: child ?? const SizedBox.shrink(),
+      ),
       // These delegates are not optional. Without them the only
       // MaterialLocalizations on offer is DefaultMaterialLocalizations,
       // which supports 'en' alone — so forcing a zh locale leaves

@@ -48,6 +48,11 @@ dependencies:
   cupertino_icons: ^1.0.8
   charset: ^2.0.1
   file_saver: ^0.4.0
+  # Background image: pick a local picture.
+  file_picker: ^11.0.3
+  # Background image: derive the theme seed from the picture. Pinned by the
+  # Flutter SDK; `any` defers to that pin rather than fighting it.
+  material_color_utilities: any
 
 dev_dependencies:
   flutter_test:

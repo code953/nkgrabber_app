@@ -143,4 +143,41 @@ class AppTheme {
         return ThemeMode.light;
     }
   }
+
+  /// The seed colour [mode] is built from — what the colour picker opens on
+  /// when the user has not chosen a custom colour yet.
+  static Color seedColor(AppThemeMode mode, {Color? customColor}) {
+    return switch (mode) {
+      AppThemeMode.simple || AppThemeMode.system => _simpleSeedColor,
+      AppThemeMode.anime => _animeSeedColor,
+      AppThemeMode.custom => customColor ?? _simpleSeedColor,
+    };
+  }
+
+  /// [base] with the page-level surfaces made see-through, for drawing over a
+  /// background image.
+  ///
+  /// Only the chrome that fills the window — scaffold, app bar, navigation —
+  /// is cleared. Cards, dialogs and sheets keep a (mostly) opaque fill: they
+  /// hold the text, and text over an arbitrary photo is unreadable.
+  static ThemeData translucent(ThemeData base) {
+    final scheme = base.colorScheme;
+    return base.copyWith(
+      scaffoldBackgroundColor: Colors.transparent,
+      appBarTheme: base.appBarTheme.copyWith(
+        backgroundColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
+        scrolledUnderElevation: 0,
+      ),
+      navigationBarTheme: base.navigationBarTheme.copyWith(
+        backgroundColor: scheme.surfaceContainer.withValues(alpha: 0.75),
+      ),
+      navigationRailTheme: base.navigationRailTheme.copyWith(
+        backgroundColor: Colors.transparent,
+      ),
+      cardTheme: base.cardTheme.copyWith(
+        color: scheme.surfaceContainerLow.withValues(alpha: 0.88),
+      ),
+    );
+  }
 }

@@ -1,7 +1,7 @@
 /// Settings page.
 ///
-/// Provides UI for theme switching, the four grabber limits, and
-/// diagnostics export.
+/// Provides UI for theme, theme colour and background image, the four
+/// grabber limits, and diagnostics export.
 library;
 
 import 'package:flutter/material.dart';
@@ -12,6 +12,9 @@ import 'package:nkgrabber/core/utils/constants.dart';
 import 'package:nkgrabber/core/utils/diagnostics_exporter.dart';
 import 'package:nkgrabber/features/accounts/application/accounts_notifier.dart';
 import 'package:nkgrabber/features/grabber/application/grabber_controller.dart';
+import 'package:nkgrabber/features/settings/application/background_controller.dart';
+import 'package:nkgrabber/features/settings/presentation/background_setting.dart';
+import 'package:nkgrabber/features/settings/presentation/theme_color_picker.dart';
 import 'package:nkgrabber/infrastructure/database/app_database.dart';
 import 'package:nkgrabber/infrastructure/providers.dart';
 
@@ -52,14 +55,19 @@ class _SettingsBody extends ConsumerWidget {
           selected: AppThemeMode.fromString(settings.theme),
           onChanged: (mode) => notifier.setTheme(mode.name),
         ),
-        if (AppThemeMode.fromString(settings.theme) == AppThemeMode.custom)
-          _CustomColorSetting(
-            color: settings.customThemeColor != null
-                ? Color(int.parse(settings.customThemeColor!))
-                : null,
-            onChanged: (Color? color) => notifier.setCustomThemeColor(
-              color?.toARGB32().toString(),
-            ),
+        _ThemeColorSetting(settings: settings),
+        BackgroundSetting(settings: settings),
+        if (settings.backgroundImageFile != null)
+          _SliderSetting(
+            icon: Icons.opacity,
+            title: '背景遮罩',
+            value: settings.backgroundOverlayPercent,
+            min: 0,
+            max: 90,
+            divisions: 18,
+            format: (v) => '$v%',
+            subtitleHint: '越高文字越清晰',
+            onChanged: notifier.setBackgroundOverlayPercent,
           ),
         const Divider(),
         const _SectionHeader(title: '抢课'),
@@ -272,141 +280,54 @@ extension on AppThemeMode {
   };
 }
 
-class _CustomColorSetting extends StatelessWidget {
-  const _CustomColorSetting({required this.color, required this.onChanged});
+/// The theme colour row.
+///
+/// Shown for every theme, not only the custom one: picking a colour switches
+/// to the custom theme in the same write. Previously the user had to choose
+/// 自定义 in one dialog before the colour row even appeared.
+class _ThemeColorSetting extends ConsumerWidget {
+  const _ThemeColorSetting({required this.settings});
 
-  final Color? color;
-  final ValueChanged<Color?> onChanged;
+  final AppSettingsEntry settings;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final mode = AppThemeMode.fromString(settings.theme);
+    final isCustom = mode == AppThemeMode.custom;
+    final seed = AppTheme.seedColor(
+      mode,
+      customColor: settings.customThemeSeed,
+    );
+
     return ListTile(
       leading: const Icon(Icons.color_lens_outlined),
-      title: const Text('自定义主题色'),
+      title: const Text('主题色'),
+      subtitle: Text(
+        isCustom ? colorToHex(seed) : '当前为「${mode.label}」预设色，点击自定义',
+      ),
       trailing: Container(
-        width: 48,
-        height: 48,
+        width: 36,
+        height: 36,
         decoration: BoxDecoration(
-          color: color ?? Theme.of(context).colorScheme.primary,
+          color: seed,
           shape: BoxShape.circle,
           border: Border.all(
-            color: Theme.of(context).colorScheme.outline,
+            color: Theme.of(context).colorScheme.outlineVariant,
             width: 2,
           ),
         ),
       ),
-      onTap: () => _showColorPicker(context),
-    );
-  }
-
-  Future<void> _showColorPicker(BuildContext context) async {
-    final currentColor = color ?? Theme.of(context).colorScheme.primary;
-    var selectedColor = currentColor;
-
-    final result = await showDialog<Color>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('选择主题色'),
-        content: SizedBox(
-          width: 300,
-          child: StatefulBuilder(
-            builder: (context, setState) => Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  height: 60,
-                  decoration: BoxDecoration(
-                    color: selectedColor,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                _ColorSlider(
-                  label: '色相',
-                  value: HSVColor.fromColor(selectedColor).hue,
-                  max: 360,
-                  onChanged: (v) => setState(() {
-                    final hsv = HSVColor.fromColor(selectedColor);
-                    selectedColor = hsv.withHue(v).toColor();
-                  }),
-                ),
-                _ColorSlider(
-                  label: '饱和度',
-                  value: HSVColor.fromColor(selectedColor).saturation * 100,
-                  max: 100,
-                  onChanged: (v) => setState(() {
-                    final hsv = HSVColor.fromColor(selectedColor);
-                    selectedColor = hsv.withSaturation(v / 100).toColor();
-                  }),
-                ),
-                _ColorSlider(
-                  label: '亮度',
-                  value: HSVColor.fromColor(selectedColor).value * 100,
-                  max: 100,
-                  onChanged: (v) => setState(() {
-                    final hsv = HSVColor.fromColor(selectedColor);
-                    selectedColor = hsv.withValue(v / 100).toColor();
-                  }),
-                ),
-              ],
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(selectedColor),
-            child: const Text('确定'),
-          ),
-        ],
-      ),
-    );
-
-    if (result != null) {
-      onChanged(result);
-    }
-  }
-}
-
-class _ColorSlider extends StatelessWidget {
-  const _ColorSlider({
-    required this.label,
-    required this.value,
-    required this.max,
-    required this.onChanged,
-  });
-
-  final String label;
-  final double value;
-  final double max;
-  final ValueChanged<double> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        SizedBox(
-          width: 60,
-          child: Text(label, style: Theme.of(context).textTheme.bodyMedium),
-        ),
-        Expanded(
-          child: Slider(
-            value: value,
-            max: max,
-            onChanged: onChanged,
-          ),
-        ),
-        SizedBox(
-          width: 40,
-          child: Text(
-            value.round().toString(),
-            style: Theme.of(context).textTheme.bodyMedium,
-          ),
-        ),
-      ],
+      onTap: () async {
+        final picked = await showThemeColorPicker(
+          context,
+          initial: seed,
+          backgroundColors:
+              ref.read(backgroundSeedColorsProvider).valueOrNull ?? const [],
+        );
+        if (picked != null) {
+          await ref.read(appSettingsProvider.notifier).setCustomTheme(picked);
+        }
+      },
     );
   }
 }

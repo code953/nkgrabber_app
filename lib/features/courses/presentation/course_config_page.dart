@@ -250,10 +250,7 @@ class _CoursePickerPageState extends ConsumerState<_CoursePickerPage> {
     );
   }
 
-  Future<void> _addTarget(
-    BuildContext context,
-    Course course,
-  ) async {
+  Future<void> _addTarget(BuildContext context, Course course) async {
     final notifier = ref.read(courseTargetsProvider(widget.accountId).notifier);
     final ok = await notifier.addTarget(
       xkid: widget.batch.xkid,

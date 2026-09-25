@@ -24,7 +24,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
 
   @override
-  int get schemaVersion => 6;
+  int get schemaVersion => 7;
 
   @override
   MigrationStrategy get migration {
@@ -90,6 +90,15 @@ class AppDatabase extends _$AppDatabase {
         // own primary color via a color picker.
         if (from < 6) {
           await m.addColumn(appSettings, appSettings.customThemeColor);
+        }
+
+        // v6 → v7: custom background image. All nullable or defaulted, so an
+        // upgraded install shows no background until the user picks one.
+        if (from < 7) {
+          await m.addColumn(appSettings, appSettings.backgroundImageFile);
+          await m.addColumn(appSettings, appSettings.backgroundImageUrl);
+          await m.addColumn(appSettings, appSettings.backgroundImageClient);
+          await m.addColumn(appSettings, appSettings.backgroundOverlayPercent);
         }
       },
       beforeOpen: (details) async {
