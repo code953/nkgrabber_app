@@ -4,7 +4,7 @@
 
 NKgrabber is a Flutter course-grabbing client for Chinese university students. It supports 5 platforms: Android, Windows, Linux, macOS, and iOS. The core flow is: account management → course target configuration → scheduled submission.
 
-The client is **fully offline** apart from the campus system itself. There is no license activation, no update check, no crash reporting, and no remote config — those were removed deliberately, so do not reintroduce a backend HTTP client.
+The client is **fully offline** apart from the campus system itself. There is no license activation, no update check, no crash reporting, and no remote config — those were removed deliberately, so do not reintroduce a backend HTTP client. The single exception is the **background-image downloader**, which fetches only a URL the user typed, only when they press a button, and caches the result on disk so launches stay offline.
 
 ## Build & Run
 
@@ -29,26 +29,29 @@ flutter build apk              # Android
 flutter build windows          # Windows
 flutter build linux            # Linux
 flutter build macos            # macOS
-flutter build ios --no-codesign # iOS (build verify only)
+flutter build ios --no-codesign # iOS (unsigned; users sign it themselves)
 ```
 
 ## Architecture
 
 ```
 lib/
-  app/              # Router, shell page, theme
+  app/              # Router, shell page, theme, AppBackground
   core/
     errors/         # AppException sealed hierarchy
     logging/        # AppLogger (logging package), LogSanitizer
     security/       # SecureStorage interface + FlutterSecureStorage impl
-    utils/          # AppConstants, extensions, DiagnosticsExporter
+    utils/          # AppConstants, extensions, DiagnosticsExporter,
+                    #   image_palette (theme seeds from a picture)
   features/
     accounts/       # AccountsNotifier, AccountsPage, AddAccountSheet
     courses/        # CourseTargetsNotifier, CourseConfigPage
     grabber/        # GrabberEngine, AccountWorker, RetryClassifier,
                     #   GrabberController, GrabberPage, GrabLogBus
-    settings/       # SettingsPage
+    settings/       # SettingsPage, theme colour picker, background
+                    #   image rows + BackgroundController
   infrastructure/
+    background/     # BackgroundImageService (local import + image-host download)
     campus/         # CampusAdapter + impl, RSA, encoding, response envelope,
                     #   portal SSO, models, clock sync
     database/       # AppDatabase (Drift), 4 tables, 4 DAOs, connection
@@ -74,6 +77,10 @@ Every page reads its data through providers; there are no stubs left.
 | `grabbableAccountsProvider` | `FutureProvider` | Enabled accounts that have ≥1 enabled target |
 | `grabberProvider` | `StateNotifier` | `GrabberController` mirrors the engine's broadcast stream |
 | `grabLogProvider` | `StreamProvider` | The live request/response log; replays `GrabLogBus`'s backlog because the page is built after a run starts |
+| `backgroundImageServiceProvider` | `Provider` | Rooted in the app support dir; overridden in tests with a temp dir |
+| `backgroundImageFileProvider` | `FutureProvider` | The stored picture, or null. Returns before touching the file system when none is set |
+| `backgroundSeedColorsProvider` | `FutureProvider` | Seed candidates from the current picture, offered in the colour picker |
+| `backgroundControllerProvider` | `Provider` | Import / refresh / clear; writes the background and its theme seed in one settings write |
 
 - **`appSettingsProvider` must not be a `StreamProvider` over `SettingsDao.watch()`.** Drift schedules a zero-duration cleanup timer when a query stream is cancelled. That timer is created during `finalizeTree`, after the framework's end-of-test pump has drained its queue, so it is still pending when `_verifyInvariants` runs and *every* widget test fails with "A Timer is still pending even after the widget tree was disposed". Teardowns run after that check, so they cannot fix it. Reading once and re-reading after each write keeps reactivity, since the row only changes through `AppSettingsNotifier`.
 - **Adapters are memory-only.** After a restart an account has a stored cookie but no `CampusClient`. Use `AccountsNotifier.ensureAdapter()` (async) rather than `getAdapter()` — it rebuilds from secure storage, and marks the account `expired` and returns null if the cookie is rejected. `GrabberEngine.AdapterResolver` is async for exactly this reason.
@@ -81,7 +88,16 @@ Every page reads its data through providers; there are no stubs left.
 
 ## Key Technical Constraints
 
-- **One HTTPS target only**: the campus system (`https://campus.nks.edu.cn`, form POST). There is no business backend — do not add one.
+- **One HTTPS target only**: the campus system (`https://campus.nks.edu.cn`, form POST). There is no business backend — do not add one. The background downloader (below) is user-directed and is not a backend.
+- **The background image is cached, never streamed.** `BackgroundImageService` copies a local pick or downloads an image-host URL into `<app support>/background/`, and the app draws from that file. Things that look optional and are not:
+  - **Only a bare file name is stored** (`app_settings.background_image_file`). iOS moves the app container on every update, so an absolute path would dangle after the first upgrade.
+  - **Every import gets a fresh file name** and the previous one is pruned. Reusing a name lets `FileImage`'s cache keep serving the old picture.
+  - **Dual-end image hosts** answer the same URL with a landscape picture for desktop browsers and a portrait one for phones, by User-Agent (and `Sec-CH-UA-Mobile`). `ImageHostClient` picks a desktop or mobile header set — by platform unless the user overrides it — and the choice is stored so 重新获取 asks the same way. A generic UA gets a landscape picture on a phone.
+  - **Content-Type is not trusted; magic numbers are.** Hosts serve pictures as `application/octet-stream` and error pages as `image/jpeg`. A non-image reply is followed once or twice if it is JSON or a bare line naming the real URL (preferring `url` / `imgurl` / … keys over document order — a `homepage` link often comes first). HTML is **never scraped**: it is an error page or an anti-hotlinking wall, and guessing an `<img>` would import its banner.
+  - **AVIF is not advertised** in `Accept`: Flutter cannot decode it on most platforms, and a host that sees it offered may pick it.
+  - Log only the **host**: image-host URLs regularly carry API keys in the query.
+- **A background re-seeds the theme from the picture** (`image_palette.dart` — Celebi quantisation + Material `Score`, the pipeline `ColorScheme.fromImageProvider` runs, but returning the seed, which is what gets persisted). A colourless picture yields **no** seed and leaves the theme alone; `Score`'s own fallback is Google blue, which is not in the picture. The seed is persisted with `toARGB32()` via `encodeThemeColor` — `Color.value` was what once read a saved colour back as all zeros.
+- **Pages are transparent only while a background is set** (`AppTheme.translucent`): scaffold, app bar and navigation are cleared, cards stay mostly opaque. The shell tabs use `NoTransitionPage` — with transparent scaffolds a route transition draws both pages over each other.
 - **The User-Agent must not name the app.** It is a stock desktop-Chrome string in `campus_client_factory.dart`. The original ended in `NKgrabber/1.0`, which signed every request in the school's access log; nothing in the campus protocol keys off the UA, so identifying ourselves bought nothing. The header set also carries `X-Requested-With: XMLHttpRequest` and `Origin`, matching a capture of the portal's own XHR — whether the server enforces them is unknown, but a difference we could cheaply avoid is one we would otherwise have to rule out first if it ever starts refusing us. Pinned by a test.
 - **The campus wire format is not guessable — it was measured.** Every field name, body format, and envelope rule in `lib/infrastructure/campus/` came from probing the live deployment, and several are counter-intuitive:
   - `status` in the response envelope is an **HTTP-like int** (200), not a boolean. `status == true` is never satisfied.
@@ -119,18 +135,18 @@ Every page reads its data through providers; there are no stubs left.
 - **Debug mode (`app_settings.debugModeEnabled`, default off) lifts the xkms gate, not the xkms value.** With it on, the batch picker lets an unrecognised batch be selected and `AccountWorker` submits instead of reporting `blockedReason` — but the request still carries the **server's own** `xkms` verbatim. Substituting a known code would destroy the only thing the mode exists to observe: what the campus system actually answers for a mode we do not recognise. `GrabberEngine` reads the flag at construction like the other limits, so the settings toggle is locked while a task runs, and `GrabberPage` shows a persistent banner while it is on — without that, a user who forgot the switch reads the server's correct refusal as a client bug.
 - **Localization delegates are mandatory**: `MaterialApp.router` forces `locale: Locale('zh')`, and the implicit `DefaultMaterialLocalizations` supports `en` only. `localizationsDelegates: S.localizationsDelegates` (which bundles the three `Global*` delegates) must stay wired, or every Material widget that calls `MaterialLocalizations.of()` — `NavigationRail`, `NavigationBar`, `Scaffold` drawers — throws at build time. Keep `supportedLocales: S.supportedLocales` so it tracks the `.arb` files.
 
-## Database Schema (Drift, schemaVersion=5)
+## Database Schema (Drift, schemaVersion=7)
 
 | Table | PK | Notes |
 |---|---|---|
 | `accounts` | UUID TEXT | `cascade` FK owner of CourseTarget and GrabTask |
 | `course_targets` | UUID TEXT | FK → accounts(id) ON DELETE CASCADE; holds a `zdxk` snapshot |
 | `grab_tasks` | UUID TEXT | FK → accounts(id) ON DELETE CASCADE |
-| `app_settings` | id=1 (singleton) | created with defaults on first read; holds `userIntervalMs`, `minRequestIntervalMs`, `maxAccounts`, `maxConcurrentAccounts`, `debugModeEnabled` |
+| `app_settings` | id=1 (singleton) | created with defaults on first read; holds `userIntervalMs`, `minRequestIntervalMs`, `maxAccounts`, `maxConcurrentAccounts`, `debugModeEnabled`, `customThemeColor`, and the background image (`backgroundImageFile` / `Url` / `Client`, `backgroundOverlayPercent`) |
 
 Indexes: `idx_course_target_account_xkid`, `idx_grab_task_account_status`.
 
-Migration history: v1→v2 dropped `license_snapshots`; v2→v3 added the three limit columns and rebuilt `app_settings` to drop `update_channel` / `crash_reporting_enabled`; v3→v4 added `debug_mode_enabled` (default false, so an upgrade is behaviour-preserving); v4→v5 added `course_targets.zdxk` (default 1, which is what the old fallback used when the re-read failed).
+Migration history: v1→v2 dropped `license_snapshots`; v2→v3 added the three limit columns and rebuilt `app_settings` to drop `update_channel` / `crash_reporting_enabled`; v3→v4 added `debug_mode_enabled` (default false, so an upgrade is behaviour-preserving); v4→v5 added `course_targets.zdxk` (default 1, which is what the old fallback used when the re-read failed); v5→v6 added `custom_theme_color`; v6→v7 added the four background columns (nullable or defaulted, so an upgrade shows no background).
 
 After any schema change, bump `schemaVersion` and add a migration case in `AppDatabase.migration.onUpgrade`.
 
@@ -153,7 +169,7 @@ import '../../core/errors/app_exception.dart';
 
 ## Testing
 
-Tests live in `test/widget_test.dart` and `test/campus_parsing_test.dart`.
+Tests live in `test/widget_test.dart`, `test/campus_parsing_test.dart` and `test/background_image_test.dart`.
 
 `widget_test.dart` covers:
 - `AppException` hierarchy
@@ -186,7 +202,7 @@ the parsers depend on — hand-written approximations are what let the original
 defects through. Do not "tidy" a fixture into something that looks more regular
 than the server actually is.
 
-Widget tests (25 cases) pump the real `NKGrabberApp` with `appDatabaseProvider`
+Widget tests pump the real `NKGrabberApp` with `appDatabaseProvider`
 overridden to `NativeDatabase.memory()` and `secureStorageProvider` to a fake —
 the production providers open a file under the application support directory,
 which does not resolve in a test, so the page would spin forever and
@@ -210,7 +226,10 @@ which does not resolve in a test, so the page would spin forever and
   stream actually emits, since the terminal state is rebuilt either way — and
   a run publishes both lifecycle and verdict lines
 - `SettingsPage`: renders the stored row, persists a slider release, warns
-  when the user interval is below the floor
+  when the user interval is below the floor; a colour picked (hex or preset
+  swatch) under a preset theme is stored and switches to custom; a background
+  applied while a dialog is open makes the pages transparent without closing
+  it
 - Debug mode: `AccountWorker` refuses an unrecognised mode with the flag off and
   submits it — carrying the server's own `xkms` verbatim — with it on;
   `xkms=0` needs no debug mode at all; the settings toggle persists and drives
@@ -218,7 +237,16 @@ which does not resolve in a test, so the page would spin forever and
   than by asserting on `Xkms.blockedReason`, which would pass with the bypass
   reverted.
 
-Run with `flutter test`. All 126 tests must pass before committing.
+`background_image_test.dart` covers seed extraction (dominant colour first,
+none for a greyscale picture), magic-number sniffing, JSON / plain-text URL
+extraction, and `BackgroundController` (import re-seeds the theme in one
+write, a replaced picture is pruned, removal keeps the theme). Its loopback
+group runs a fake **dual-end** image host that redirects by User-Agent, and
+asserts the mobile and desktop clients get different pictures. It sets
+`HttpOverrides.global = null`: `TestWidgetsFlutterBinding` otherwise answers
+every request with 400 without touching the socket.
+
+Run with `flutter test`. All tests must pass before committing.
 
 New tests must be checked negatively — break the wiring under test and
 confirm the case goes red. A green test proves nothing on its own; several of
@@ -274,7 +302,8 @@ distinguishes "asserts the behaviour" from "asserts a coincidence".
 ## CI/CD
 
 - `.github/workflows/ci.yml` — runs on every PR: format check, analyze, test, generated-file consistency check.
-- `.github/workflows/release.yml` — runs on `v*` tags: builds all 5 platforms, verifies the Android signing certificate, and creates a **pre-release** GitHub Release with SHA256SUMS. iOS is a compile check only (`--no-codesign`) and ships no artifact, but `create-release` still depends on it, so an iOS compile failure blocks the whole release.
+- `.github/workflows/release.yml` — runs on `v*` tags: builds all 5 platforms, verifies the Android signing certificate, and creates a GitHub Release (not a pre-release since v1.0.1) with SHA256SUMS. iOS ships **unsigned** as `nkgrabber-ios-unsigned.zip` (`Runner.app`, built with `--no-codesign`) for users to sign themselves; `create-release` depends on it, so an iOS compile failure blocks the whole release.
+- **Platform permissions the network features need are declared explicitly.** macOS runs sandboxed, and a sandboxed app without `com.apple.security.network.client` cannot open an outgoing connection at all — both entitlements files carry it (plus `files.user-selected.read-only` for the background picker). Android's `INTERNET` permission is declared in the main manifest; it used to arrive only through `file_saver`'s manifest merge, so dropping that dependency would have silently cut release builds off the network. iOS declares `NSPhotoLibraryUsageDescription` for the picker.
 
 ## Commit Convention
 
