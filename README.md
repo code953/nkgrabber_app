@@ -12,13 +12,15 @@
 | Windows | `nkgrabber-windows-x64.zip` | 解压后运行 `nkgrabber.exe` |
 | Linux | `nkgrabber-linux-x64.tar.gz` | 解压后运行 `./install.sh` 添加桌面项，或直接运行 `./nkgrabber` |
 | macOS | `nkgrabber-macos-universal.dmg` | 见下方说明 |
+| iOS | `nkgrabber-ios-unsigned.ipa` | 未签名，需自行签名后安装，见下方说明 |
 
 每次发布附带 `SHA256SUMS.txt`，可用于校验下载完整性。
 
 **macOS 用户注意**：安装包未经 Apple 公证，首次打开会被 Gatekeeper 拦截。
 需在「访达」中右键点击应用图标 →「打开」，再在弹窗中确认。
 
-**iOS 暂不提供安装包**。CI 只做编译验证，分发 iOS 应用需要 Apple 开发者账号。
+**iOS 用户注意**：安装包未签名，不能直接安装。请用 AltStore、Sideloadly 等工具以
+自己的 Apple ID 签名后安装；免费 Apple ID 签出的应用 7 天后失效，需要重新签名。
 
 ## 功能
 
