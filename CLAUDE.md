@@ -311,6 +311,12 @@ Each phase of work gets its own commit. Use `feat: Phase N - description` format
 
 **After completing each functional update, perform a git commit immediately.** This ensures that each feature or fix is captured as a discrete checkpoint in version control.
 
+**Every commit must be atomic: one logical change, complete, and nothing else.**
+- *Complete* — the change carries everything it needs: the tests that pin it, regenerated `*.g.dart` / l10n output, and the docs that describe it (this file, `README.md`). Each commit must pass `flutter test` on its own; a commit that only works once the next one lands is not atomic.
+- *Nothing else* — a formatting pass over a file the change does not touch, a version bump, a bug found along the way: each gets its own commit, however small. When the working tree holds more than one change, stage them separately (by path, or by hunk) rather than with `git add -A` / `git commit -a`.
+
+One request can therefore end in several commits. That is the point: any one of them can be reverted, cherry-picked or bisected without dragging an unrelated change along.
+
 ## Sensitive Data Rules
 
 Never commit or log:
