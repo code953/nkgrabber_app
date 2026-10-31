@@ -6,6 +6,7 @@ library;
 
 import 'dart:async';
 
+import 'package:dio/dio.dart';
 import 'package:drift/drift.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:nkgrabber/core/logging/app_logger.dart';
@@ -62,12 +63,18 @@ class AccountsNotifier extends StateNotifier<AccountsState> {
   AccountsNotifier({
     required AccountDao accountDao,
     required SecureStorage secureStorage,
+    CampusClient Function(String accountId)? clientFactory,
   }) : _accountDao = accountDao,
        _secureStorage = secureStorage,
+       _clientFactory =
+           clientFactory ?? ((accountId) => CampusClient(accountId: accountId)),
        super(const AccountsState());
 
   final AccountDao _accountDao;
   final SecureStorage _secureStorage;
+
+  /// Injectable so restoration can be tested with a local-only transport.
+  final CampusClient Function(String accountId) _clientFactory;
   final _logger = AppLogger('AccountsNotifier');
 
   /// Active campus adapters keyed by account ID.
@@ -266,34 +273,60 @@ class AccountsNotifier extends StateNotifier<AccountsState> {
   /// stored cookie but no client. Returns null when the cookie is missing —
   /// the caller must then prompt for a fresh login rather than silently
   /// issuing unauthenticated requests.
-  Future<CampusAdapter?> ensureAdapter(String accountId) async {
+  Future<CampusAdapter?> ensureAdapter(
+    String accountId, {
+    CancelToken? cancelToken,
+  }) async {
+    void checkCancelled() {
+      if (cancelToken?.isCancelled ?? false) throw cancelToken!.cancelError!;
+    }
+
+    checkCancelled();
     final existing = _adapters[accountId];
     if (existing != null) return existing;
 
     final account = await _accountDao.getById(accountId);
+    checkCancelled();
     if (account == null) return null;
 
     final gdpk = await _secureStorage.read(key: account.cookieJarRef);
+    checkCancelled();
     if (gdpk == null || gdpk.isEmpty) {
       _logger.warn('No stored cookie for account $accountId');
       return null;
     }
 
-    final client = CampusClient(accountId: accountId);
-    final adapter = CampusAdapterImpl(client: client);
+    final client = _clientFactory(accountId);
+    var registered = false;
     try {
-      await adapter.validateCookie(gdpk);
-    } on Exception catch (e) {
-      client.dispose();
-      await _accountDao.updateStatus(accountId, AccountStatus.expired);
-      await loadAccounts();
-      _logger.warn('Stored cookie rejected for account $accountId', e);
-      return null;
-    }
+      final adapter = CampusAdapterImpl(client: client);
+      try {
+        await adapter.validateCookie(gdpk, cancelToken: cancelToken);
+        checkCancelled();
+      } on Exception catch (e) {
+        // Stopping a run says nothing about whether its cookie is valid.
+        checkCancelled();
+        if (e is DioException && CancelToken.isCancel(e)) rethrow;
+        await _accountDao.updateStatus(accountId, AccountStatus.expired);
+        checkCancelled();
+        final accounts = await _accountDao.getAll();
+        checkCancelled();
+        state = state.copyWith(accounts: accounts, isLoading: false);
+        _logger.warn('Stored cookie rejected for account $accountId', e);
+        return null;
+      }
 
-    _adapters[accountId] = adapter;
-    _clients[accountId] = client;
-    return adapter;
+      // Another caller may have restored the same account while we awaited.
+      // Reuse that client; the unregistered one is released in finally.
+      final restored = _adapters[accountId];
+      if (restored != null) return restored;
+      _adapters[accountId] = adapter;
+      _clients[accountId] = client;
+      registered = true;
+      return adapter;
+    } finally {
+      if (!registered) client.dispose();
+    }
   }
 
   /// Clean up ephemeral accounts on normal exit.

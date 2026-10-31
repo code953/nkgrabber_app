@@ -7,6 +7,7 @@ library;
 import 'dart:async';
 import 'dart:math';
 
+import 'package:dio/dio.dart';
 import 'package:nkgrabber/core/errors/app_exception.dart';
 import 'package:nkgrabber/core/logging/app_logger.dart';
 import 'package:nkgrabber/features/grabber/application/retry_classifier.dart';
@@ -52,13 +53,24 @@ class AccountWorker {
   final _logger = AppLogger('AccountWorker');
   final _random = Random();
   bool _cancelled = false;
+  final _cancelToken = CancelToken();
+  Timer? _retryTimer;
+  Completer<void>? _retryWait;
 
   /// Attempts made for the current chunk, so the live log can show that the
   /// loop really is retrying rather than stuck.
   int _attempt = 0;
 
   /// Cancel the worker.
-  void cancel() => _cancelled = true;
+  void cancel() {
+    _cancelled = true;
+    _cancelToken.cancel();
+    _retryTimer?.cancel();
+    _retryTimer = null;
+    final wait = _retryWait;
+    _retryWait = null;
+    if (wait != null && !wait.isCompleted) wait.complete();
+  }
 
   /// Run the submission loop for the given targets.
   ///
@@ -121,6 +133,7 @@ class AccountWorker {
         if (_cancelled) return null;
 
         final decision = await _submitChunkWithRetry(xkid, xkms, chunk);
+        if (_cancelled) return null;
         if (decision == RetryDecision.stopTask) return decision;
       }
     }
@@ -154,7 +167,10 @@ class AccountWorker {
         detail: 'xkid=$xkid xkms=$xkms',
       );
       try {
-        final result = await adapter.submit(command);
+        final result = await adapter.submit(command, cancelToken: _cancelToken);
+        // A custom adapter may finish even after cancellation. Stop wins over
+        // both late successes and late errors; neither belongs to a new run.
+        if (_cancelled) return null;
 
         if (result.success) {
           _log(
@@ -184,6 +200,7 @@ class AccountWorker {
         );
         _log(GrabLogKind.failure, '提交未确认，将重试', detail: result.message);
       } on Exception catch (e) {
+        if (_cancelled) return null;
         final decision = RetryClassifier.classify(e);
         _logger.warn('[$accountId] Submit error: $e, decision: $decision');
         _log(
@@ -216,6 +233,7 @@ class AccountWorker {
 
   /// Publish a line to the on-screen live log.
   void _log(GrabLogKind kind, String message, {String? detail}) {
+    if (_cancelled) return;
     grabLogBus.log(
       kind,
       message,
@@ -260,8 +278,18 @@ class AccountWorker {
   /// Uses [Random] so each wait has a different offset (not a fixed
   /// hash-derived constant). Jitter is 0–10% upward only.
   Future<void> _waitWithJitter(int baseMs) async {
+    if (_cancelled) return;
     final jitter = (baseMs * 0.1 * _random.nextInt(100) / 100).toInt();
     final waitMs = baseMs + jitter;
-    await Future<void>.delayed(Duration(milliseconds: waitMs));
+    final wait = Completer<void>();
+    _retryWait = wait;
+    _retryTimer = Timer(Duration(milliseconds: waitMs), wait.complete);
+    try {
+      await wait.future;
+    } finally {
+      _retryTimer?.cancel();
+      _retryTimer = null;
+      _retryWait = null;
+    }
   }
 }

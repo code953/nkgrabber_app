@@ -8,6 +8,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
+import 'package:dio/dio.dart';
 import 'package:drift/drift.dart';
 import 'package:nkgrabber/core/logging/app_logger.dart';
 import 'package:nkgrabber/core/utils/constants.dart';
@@ -28,7 +29,11 @@ import 'package:uuid/uuid.dart';
 /// Async because adapters live only in memory: after a restart the account
 /// exists in the database but has no client, and rebuilding one requires
 /// reading the stored cookie.
-typedef AdapterResolver = Future<CampusAdapter?> Function(String accountId);
+typedef AdapterResolver =
+    Future<CampusAdapter?> Function(
+      String accountId, {
+      CancelToken? cancelToken,
+    });
 
 /// Resolves an account's display name for the on-screen live log.
 ///
@@ -71,8 +76,7 @@ class GrabberEngine {
   final int _effectiveIntervalMs;
 
   final _logger = AppLogger('GrabberEngine');
-  final _workers = <String, AccountWorker>{};
-  Timer? _timeoutTimer;
+  _GrabberRun? _run;
   GrabberState _state = const GrabberState();
   final _stateController = StreamController<GrabberState>.broadcast();
   bool _disposed = false;
@@ -83,195 +87,191 @@ class GrabberEngine {
   /// Current state.
   GrabberState get state => _state;
 
+  bool _isActive(_GrabberRun run) =>
+      !_disposed && identical(_run, run) && !run.cancelToken.isCancelled;
+
   /// Start the grabber for the given account IDs.
   Future<void> start(List<String> accountIds) async {
-    if (_state.isRunning) {
-      _logger.warn('Grabber already running, ignoring start');
-      return;
-    }
+    if (_disposed || _state.isRunning) return;
 
-    // A fresh run starts a fresh log. Keeping the previous run's lines would
-    // make it impossible to tell which attempt a line belongs to.
+    final run = _GrabberRun();
+    _run = run;
     grabLogBus
       ..reset()
       ..log(GrabLogKind.lifecycle, '开始抢课：${accountIds.length} 个账号');
-
     _updateState(
       GrabberState(
-        // Built fresh rather than copyWith'd: restarting after a stop must not
-        // inherit the previous run's counters, or the progress bar resumes at
-        // "成功 2/3" for a run that has submitted nothing yet.
         status: GrabberStatus.preparing,
         startedAt: DateTime.now().toUtc(),
-        activeAccountIds: accountIds,
+        activeAccountIds: List.of(accountIds),
       ),
     );
-
-    // Step 1: Gather targets per account.
-    final accountTargets = <String, List<CourseTargetEntry>>{};
-    var totalTargets = 0;
-
-    for (final accountId in accountIds) {
-      final targets = await _courseTargetDao.getEnabledByAccount(accountId);
-      if (targets.isNotEmpty) {
-        accountTargets[accountId] = targets;
-        totalTargets += targets.length;
-      }
-    }
-
-    if (accountTargets.isEmpty) {
-      _updateState(
-        _state.copyWith(status: GrabberStatus.failed, message: '没有可用的课程目标'),
-      );
-      return;
-    }
-
-    _updateState(
-      _state.copyWith(
-        status: GrabberStatus.running,
-        totalTargets: totalTargets,
-      ),
-    );
-
-    // Step 2: Start 30-minute timeout timer.
-    _timeoutTimer = Timer(
-      const Duration(minutes: AppConstants.maxGrabTaskRuntimeMinutes),
-      _onTimeout,
-    );
-
-    // Step 3: Create task records and launch workers.
-    final completedTargets = <String>[];
-    final failedTargets = <String>[];
-
-    // Limit concurrent accounts.
-    final activeIds = accountTargets.keys.take(_maxConcurrent).toList();
-
-    // Track task IDs for finalization.
-    final taskIds = <String, String>{};
 
     final futures = <Future<void>>[];
-
-    for (final accountId in activeIds) {
-      final adapter = await _adapterResolver(accountId);
-      if (adapter == null) {
-        _logger.warn('No adapter for account $accountId');
-        grabLogBus.log(
-          GrabLogKind.failure,
-          '账号登录状态已失效，跳过',
-          accountId: accountId,
-        );
-        continue;
+    try {
+      final accountTargets = <String, List<CourseTargetEntry>>{};
+      for (final accountId in accountIds) {
+        final targets = await _courseTargetDao.getEnabledByAccount(accountId);
+        if (!_isActive(run)) return;
+        if (targets.isNotEmpty) {
+          accountTargets[accountId] = targets;
+          run.totalTargets += targets.length;
+        }
       }
 
-      final worker = AccountWorker(
-        accountId: accountId,
-        adapter: adapter,
-        effectiveIntervalMs: _effectiveIntervalMs,
-        debugMode: _debugMode,
-        accountLabel: _accountLabels?.call(accountId),
-        onTargetResult: (targetId, {required bool success, String? message}) {
-          if (success) {
-            completedTargets.add(targetId);
-            _updateState(
-              _state.copyWith(
-                completedTargets: List.from(completedTargets),
-                successCount: completedTargets.length,
-              ),
-            );
-          } else {
-            failedTargets.add(targetId);
-            _updateState(
-              _state.copyWith(
-                failedTargets: List.from(failedTargets),
-                failedCount: failedTargets.length,
-              ),
-            );
-          }
-        },
-      );
+      if (accountTargets.isEmpty) {
+        run.finalStatus = GrabberStatus.failed;
+        _updateState(
+          _state.copyWith(status: run.finalStatus, message: '没有可用的课程目标'),
+        );
+        return;
+      }
 
-      _workers[accountId] = worker;
-
-      // Create a task record in the database with JSON target list.
-      final taskId = const Uuid().v4();
-      taskIds[accountId] = taskId;
-      final targetIds = accountTargets[accountId]!.map((t) => t.id).toList();
-      await _grabTaskDao.insertTask(
-        GrabTasksCompanion.insert(
-          id: taskId,
-          accountId: accountId,
-          targetIdsJson: jsonEncode(targetIds),
-          status: GrabTaskStatus.running,
-          effectiveIntervalMs: _effectiveIntervalMs,
-          startedAt: Value(DateTime.now().toUtc().toIso8601String()),
-        ),
-      );
-
-      futures.add(
-        worker.run(accountTargets[accountId]!).then((decision) {
-          if (decision == RetryDecision.stopTask) {
-            _logger.warn('Worker $accountId requested task stop');
-          }
-        }),
-      );
-    }
-
-    // Wait for all workers to complete.
-    await Future.wait(futures);
-
-    // Determine final status.
-    _timeoutTimer?.cancel();
-    _timeoutTimer = null;
-    _workers.clear();
-
-    // No worker ever started — every account failed to produce an adapter.
-    // Reporting "完成 0/N" here would blame the campus system for what is
-    // really an expired login.
-    if (taskIds.isEmpty) {
       _updateState(
         _state.copyWith(
-          status: GrabberStatus.failed,
-          message: '所有账号的登录状态均已失效，请重新添加账号',
+          status: GrabberStatus.running,
+          totalTargets: run.totalTargets,
         ),
       );
-      return;
-    }
+      run.timeoutTimer = Timer(
+        const Duration(minutes: AppConstants.maxGrabTaskRuntimeMinutes),
+        () => _onTimeout(run),
+      );
 
-    final finalStatus = _state.status == GrabberStatus.running
-        ? (completedTargets.length == totalTargets
-              ? GrabberStatus.success
-              : GrabberStatus.failed)
-        : _state.status; // Preserve stopped/interrupted/etc.
+      for (final accountId in accountTargets.keys.take(_maxConcurrent)) {
+        if (!_isActive(run)) return;
+        final adapter = await _adapterResolver(
+          accountId,
+          cancelToken: run.cancelToken,
+        );
+        if (!_isActive(run)) return;
+        if (adapter == null) {
+          _logger.warn('No adapter for account $accountId');
+          grabLogBus.log(
+            GrabLogKind.failure,
+            '账号登录状态已失效，跳过',
+            accountId: accountId,
+          );
+          continue;
+        }
 
-    final finalMessage = finalStatus == GrabberStatus.success
-        ? '全部课程选课成功'
-        : '完成 ${completedTargets.length}/$totalTargets';
+        final worker = AccountWorker(
+          accountId: accountId,
+          adapter: adapter,
+          effectiveIntervalMs: _effectiveIntervalMs,
+          debugMode: _debugMode,
+          accountLabel: _accountLabels?.call(accountId),
+          onTargetResult: (targetId, {required bool success, String? message}) {
+            if (!_isActive(run)) return;
+            if (success) {
+              run.completedTargets.add(targetId);
+            } else {
+              run.failedTargets.add(targetId);
+            }
+            _updateState(
+              _state.copyWith(
+                completedTargets: List.of(run.completedTargets),
+                successCount: run.completedTargets.length,
+                failedTargets: List.of(run.failedTargets),
+                failedCount: run.failedTargets.length,
+              ),
+            );
+          },
+        );
+        run.workers.add(worker);
 
-    if (_state.status == GrabberStatus.running) {
-      _updateState(_state.copyWith(status: finalStatus, message: finalMessage));
+        final taskId = const Uuid().v4();
+        final targets = accountTargets[accountId]!;
+        await _grabTaskDao.insertTask(
+          GrabTasksCompanion.insert(
+            id: taskId,
+            accountId: accountId,
+            targetIdsJson: jsonEncode(targets.map((t) => t.id).toList()),
+            status: GrabTaskStatus.running,
+            effectiveIntervalMs: _effectiveIntervalMs,
+            startedAt: Value(DateTime.now().toUtc().toIso8601String()),
+          ),
+        );
+        // An insert cannot be cancelled. Even if stop won the race, this row
+        // belongs to this run and must still be finalized in finally.
+        run.taskIds.add(taskId);
+        if (!_isActive(run)) return;
+        futures.add(_runWorker(run, worker, targets));
+      }
+
+      await Future.wait(futures);
+      if (!_isActive(run)) return;
+
+      run.finalStatus = run.completedTargets.length == run.totalTargets
+          ? GrabberStatus.success
+          : GrabberStatus.failed;
+      final message = run.taskIds.isEmpty
+          ? '所有账号的登录状态均已失效，请重新添加账号'
+          : run.finalStatus == GrabberStatus.success
+          ? '全部课程选课成功'
+          : '完成 ${run.completedTargets.length}/${run.totalTargets}';
+      _updateState(_state.copyWith(status: run.finalStatus, message: message));
       grabLogBus.log(
-        finalStatus == GrabberStatus.success
+        run.finalStatus == GrabberStatus.success
             ? GrabLogKind.success
             : GrabLogKind.failure,
-        '任务结束：$finalMessage',
+        '任务结束：$message',
       );
+    } catch (_) {
+      _failRun(run);
+    } finally {
+      run.cancel(run.finalStatus);
+      try {
+        await Future.wait(futures);
+      } finally {
+        try {
+          await _finalizeTasks(run);
+        } finally {
+          // A stopped run may finish after its replacement has already started.
+          if (identical(_run, run)) _run = null;
+        }
+      }
     }
+  }
 
-    // Finalize task records.
+  Future<void> _runWorker(
+    _GrabberRun run,
+    AccountWorker worker,
+    List<CourseTargetEntry> targets,
+  ) async {
+    try {
+      final decision = await worker.run(targets);
+      if (_isActive(run) && decision == RetryDecision.stopTask) {
+        _logger.warn('Worker ${worker.accountId} requested task stop');
+      }
+    } catch (_) {
+      _failRun(run);
+    }
+  }
+
+  void _failRun(_GrabberRun run) {
+    if (!_isActive(run)) return;
+    run.cancel(GrabberStatus.failed);
+    _logger.warn('Grabber run failed');
+    grabLogBus.log(GrabLogKind.failure, '任务执行失败，已停止');
+    _updateState(
+      _state.copyWith(status: GrabberStatus.failed, message: '任务执行失败，请重试'),
+    );
+  }
+
+  Future<void> _finalizeTasks(_GrabberRun run) async {
     final stoppedAt = DateTime.now().toUtc().toIso8601String();
-    for (final accountId in activeIds) {
-      final taskId = taskIds[accountId];
-      if (taskId == null) continue;
+    for (final taskId in run.taskIds) {
       await _grabTaskDao.updateTask(
         GrabTasksCompanion(
           id: Value(taskId),
-          status: Value(_grabTaskStatusFrom(finalStatus)),
+          status: Value(_grabTaskStatusFrom(run.finalStatus)),
           stoppedAt: Value(stoppedAt),
           lastResultJson: Value(
             jsonEncode({
-              'completed': completedTargets.length,
-              'failed': failedTargets.length,
-              'total': totalTargets,
+              'completed': run.completedTargets.length,
+              'failed': run.failedTargets.length,
+              'total': run.totalTargets,
             }),
           ),
         ),
@@ -279,25 +279,14 @@ class GrabberEngine {
     }
   }
 
-  /// Stop the grabber.
-  ///
-  /// Stopping is not a dead end: the workers are cancelled and the state goes
-  /// to `stopped`, from which [start] is allowed again. `isRunning` is already
-  /// false there, so no extra reset step is needed — the previous design made
-  /// the user press reset before they could try again, which during an open
-  /// batch is time they do not have.
+  /// Stop the current run. A new run may start without waiting for its cleanup.
   void stop() {
-    if (!_state.isRunning) return;
+    final run = _run;
+    if (run == null || !_state.isRunning) return;
 
+    run.cancel(GrabberStatus.stopped);
     _logger.info('Grabber stopped by user');
     grabLogBus.log(GrabLogKind.lifecycle, '用户已停止');
-    for (final worker in _workers.values) {
-      worker.cancel();
-    }
-    _workers.clear();
-    _timeoutTimer?.cancel();
-    _timeoutTimer = null;
-
     _updateState(
       _state.copyWith(status: GrabberStatus.stopped, message: '已手动停止'),
     );
@@ -305,9 +294,8 @@ class GrabberEngine {
 
   /// Reset to idle state.
   void reset() {
-    _workers.clear();
-    _timeoutTimer?.cancel();
-    _timeoutTimer = null;
+    _run?.cancel(GrabberStatus.stopped);
+    _run = null;
     _updateState(const GrabberState());
   }
 
@@ -321,21 +309,17 @@ class GrabberEngine {
 
   /// Clean up resources.
   void dispose() {
-    _timeoutTimer?.cancel();
-    for (final worker in _workers.values) {
-      worker.cancel();
-    }
-    _workers.clear();
+    _run?.cancel(GrabberStatus.stopped);
+    _run = null;
     _disposed = true;
     _stateController.close();
   }
 
-  void _onTimeout() {
+  void _onTimeout(_GrabberRun run) {
+    if (!_isActive(run)) return;
+    run.cancel(GrabberStatus.stopped);
     _logger.warn('Grabber reached 30-minute timeout');
     grabLogBus.log(GrabLogKind.lifecycle, '已达到 30 分钟运行上限，自动停止');
-    for (final worker in _workers.values) {
-      worker.cancel();
-    }
     _updateState(
       _state.copyWith(status: GrabberStatus.stopped, message: '已达到30分钟运行上限'),
     );
@@ -363,10 +347,30 @@ class GrabberEngine {
   }
 
   void _updateState(GrabberState newState) {
-    _state = newState;
-    // A worker awaiting its interval can outlive dispose(); adding to a
-    // closed controller would throw from a future nobody is watching.
     if (_disposed) return;
+    _state = newState;
     _stateController.add(_state);
+  }
+}
+
+/// Resources and results must outlive stop without becoming the next run's.
+class _GrabberRun {
+  final cancelToken = CancelToken();
+  final workers = <AccountWorker>[];
+  final taskIds = <String>[];
+  final completedTargets = <String>[];
+  final failedTargets = <String>[];
+  int totalTargets = 0;
+  GrabberStatus finalStatus = GrabberStatus.stopped;
+  Timer? timeoutTimer;
+
+  void cancel(GrabberStatus status) {
+    if (cancelToken.isCancelled) return;
+    finalStatus = status;
+    cancelToken.cancel();
+    timeoutTimer?.cancel();
+    for (final worker in workers) {
+      worker.cancel();
+    }
   }
 }

@@ -4,6 +4,7 @@
 /// Each method operates within a specific account's isolated session.
 library;
 
+import 'package:dio/dio.dart';
 import 'package:nkgrabber/infrastructure/campus/models/campus_models.dart';
 
 /// Abstract interface for campus system operations (§7).
@@ -12,7 +13,10 @@ abstract class CampusAdapter {
   Future<LoginResult> loginWithPassword(String account, String password);
 
   /// Validate an existing gdpk cookie and fetch student profile.
-  Future<StudentProfile> validateCookie(String gdpk);
+  Future<StudentProfile> validateCookie(
+    String gdpk, {
+    CancelToken? cancelToken,
+  });
 
   /// List available selection batches.
   Future<List<SelectionBatch>> listBatches();
@@ -24,7 +28,10 @@ abstract class CampusAdapter {
   Future<List<SelectionRecord>> listSelections(String xkid);
 
   /// Submit course selection.
-  Future<SubmitResult> submit(SubmitSelection command);
+  Future<SubmitResult> submit(
+    SubmitSelection command, {
+    CancelToken? cancelToken,
+  });
 
   /// Withdraw from a batch.
   Future<WithdrawResult> withdraw(String xkid);

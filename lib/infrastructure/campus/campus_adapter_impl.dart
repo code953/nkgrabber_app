@@ -4,6 +4,7 @@
 /// Handles GBK decoding, RSA login, cookie management, and response parsing.
 library;
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -232,7 +233,10 @@ class CampusAdapterImpl implements CampusAdapter {
   }
 
   @override
-  Future<StudentProfile> validateCookie(String gdpk) async {
+  Future<StudentProfile> validateCookie(
+    String gdpk, {
+    CancelToken? cancelToken,
+  }) async {
     return _queue.add(() async {
       // Set the gdpk cookie.
       await _client.setCookie(
@@ -240,9 +244,10 @@ class CampusAdapterImpl implements CampusAdapter {
         gdpk,
         Uri.parse(_client.dio.options.baseUrl).host,
       );
+      _throwIfCancelled(cancelToken);
 
-      return _fetchProfile();
-    });
+      return _fetchProfile(cancelToken: cancelToken);
+    }, cancelToken: cancelToken);
   }
 
   @override
@@ -323,7 +328,10 @@ class CampusAdapterImpl implements CampusAdapter {
   }
 
   @override
-  Future<SubmitResult> submit(SubmitSelection command) async {
+  Future<SubmitResult> submit(
+    SubmitSelection command, {
+    CancelToken? cancelToken,
+  }) async {
     return _queue.add(() async {
       // kmhDtoList is a JSON array of objects, not a comma-joined list of ids:
       //   kmhDtoList=[{"kmh":"<id>"},{"kmh":"<id>"}]
@@ -341,6 +349,7 @@ class CampusAdapterImpl implements CampusAdapter {
             '&sftj=1'
             '&kms=${command.kmhList.length}'
             '&kmhDtoList=${Uri.encodeQueryComponent(kmhDtoList)}',
+        cancelToken: cancelToken,
       );
       final body = _decodeAndParseJson(response);
 
@@ -381,7 +390,7 @@ class CampusAdapterImpl implements CampusAdapter {
         message: campusString(result['msg']),
         rawData: campusString(result['data']),
       );
-    });
+    }, cancelToken: cancelToken);
   }
 
   /// Map a submit failure message to a typed [CampusException].
@@ -463,14 +472,21 @@ class CampusAdapterImpl implements CampusAdapter {
   /// Every course-selection endpoint shares this shape, so the content type and
   /// the offset bookkeeping live here rather than at each of the six call
   /// sites.
-  Future<Response<List<int>>> _postForm(String path, String body) async {
+  Future<Response<List<int>>> _postForm(
+    String path,
+    String body, {
+    CancelToken? cancelToken,
+  }) async {
+    _throwIfCancelled(cancelToken);
     final response = await _client.dio.post<List<int>>(
       path,
       data: body,
+      cancelToken: cancelToken,
       options: Options(
         contentType: 'application/x-www-form-urlencoded; charset=UTF-8',
       ),
     );
+    _throwIfCancelled(cancelToken);
     _updateClockOffset(response);
     return response;
   }
@@ -480,8 +496,12 @@ class CampusAdapterImpl implements CampusAdapter {
   /// Used by the cookie-only login path, where the portal home page was never
   /// fetched. Batch rows carry `xsid`; a selection record additionally carries
   /// the student's name.
-  Future<StudentProfile> _fetchProfile() async {
-    final response = await _postForm('/njs_3033/xsxk/getStudentXkList', '');
+  Future<StudentProfile> _fetchProfile({CancelToken? cancelToken}) async {
+    final response = await _postForm(
+      '/njs_3033/xsxk/getStudentXkList',
+      '',
+      cancelToken: cancelToken,
+    );
     // Throws sessionExpired on a rejected cookie, which is what makes this a
     // usable liveness probe for AccountsNotifier.ensureAdapter.
     final rows = unwrapCampusRows(
@@ -503,7 +523,11 @@ class CampusAdapterImpl implements CampusAdapter {
       );
     }
 
-    final studentName = await _fetchStudentName(rows: rows);
+    final studentName = await _fetchStudentName(
+      rows: rows,
+      cancelToken: cancelToken,
+    );
+    _throwIfCancelled(cancelToken);
     return StudentProfile(
       studentNo: studentNo,
       studentName: studentName ?? studentNo,
@@ -512,10 +536,14 @@ class CampusAdapterImpl implements CampusAdapter {
 
   /// Best-effort lookup of the student's display name.
   ///
-  /// Returns null rather than throwing: the name is display-only, and no login
-  /// should fail because a cosmetic field was unavailable.
-  Future<String?> _fetchStudentName({List<Map<String, dynamic>>? rows}) async {
+  /// Returns null rather than throwing for a missing name: the name is
+  /// display-only. Cancellation is control flow and must still propagate.
+  Future<String?> _fetchStudentName({
+    List<Map<String, dynamic>>? rows,
+    CancelToken? cancelToken,
+  }) async {
     try {
+      _throwIfCancelled(cancelToken);
       final batches = rows ?? const <Map<String, dynamic>>[];
       final xkid = batches
           .map((r) => campusString(r['xkid']))
@@ -525,6 +553,7 @@ class CampusAdapterImpl implements CampusAdapter {
       final response = await _postForm(
         '/njs_3033/xsxk_Xbk/getStudentXkJlList',
         'xkid=$xkid',
+        cancelToken: cancelToken,
       );
       final records = unwrapCampusRows(
         _decodeAndParseJson(response),
@@ -533,7 +562,9 @@ class CampusAdapterImpl implements CampusAdapter {
       return records
           .map((r) => campusString(r['xm']))
           .firstWhere((v) => v != null, orElse: () => null);
-    } on Exception {
+    } on Exception catch (e) {
+      _throwIfCancelled(cancelToken);
+      if (e is DioException && CancelToken.isCancel(e)) rethrow;
       return null;
     }
   }
@@ -630,6 +661,10 @@ class HttpDate {
   }
 }
 
+void _throwIfCancelled(CancelToken? cancelToken) {
+  if (cancelToken?.isCancelled ?? false) throw cancelToken!.cancelError!;
+}
+
 /// Simple per-account serial request queue.
 ///
 /// Ensures that only one campus request runs at a time per account (§7.4).
@@ -639,13 +674,21 @@ class HttpDate {
 class _RequestQueue {
   Future<void> _last = Future.value();
 
-  Future<T> add<T>(Future<T> Function() task) {
-    // Chain onto the current tail. Each new caller captures the tail at the
-    // moment of enqueue and waits for it before running its own task.
-    final next = _last.then<T>((_) => task());
-    // Update the tail, swallowing errors so a failed task doesn't break
-    // subsequent callers waiting on the new tail.
+  Future<T> add<T>(Future<T> Function() task, {CancelToken? cancelToken}) {
+    // Keep the real task as the tail even when its caller stops waiting. A
+    // cancelled queued task must never start later, and cancelling one item
+    // must not allow the next item to overtake the in-flight request.
+    final next = _last.then<T>((_) async {
+      _throwIfCancelled(cancelToken);
+      final result = await task();
+      _throwIfCancelled(cancelToken);
+      return result;
+    });
     _last = next.then<void>((_) {}).catchError((_) {});
-    return next;
+    if (cancelToken == null) return next;
+    return Future.any([
+      next,
+      cancelToken.whenCancel.then<T>((error) => throw error),
+    ]);
   }
 }

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
+import 'package:dio/dio.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
@@ -439,7 +440,7 @@ void main() {
       final engine = GrabberEngine(
         courseTargetDao: db.courseTargetDao,
         grabTaskDao: db.grabTaskDao,
-        adapterResolver: (_) async => adapter,
+        adapterResolver: (_, {CancelToken? cancelToken}) async => adapter,
         maxConcurrentAccounts: 1,
         minRequestIntervalMs: 1,
         userIntervalMs: 1,
@@ -1389,7 +1390,10 @@ class _RecordingAdapter implements CampusAdapter {
   }
 
   @override
-  Future<SubmitResult> submit(SubmitSelection command) async {
+  Future<SubmitResult> submit(
+    SubmitSelection command, {
+    CancelToken? cancelToken,
+  }) async {
     submits.add(command);
     final answer = onSubmit;
     if (answer != null) return answer(command);
@@ -1407,8 +1411,10 @@ class _RecordingAdapter implements CampusAdapter {
       throw UnimplementedError();
 
   @override
-  Future<StudentProfile> validateCookie(String gdpk) =>
-      throw UnimplementedError();
+  Future<StudentProfile> validateCookie(
+    String gdpk, {
+    CancelToken? cancelToken,
+  }) => throw UnimplementedError();
 
   @override
   Future<WithdrawResult> withdraw(String xkid) => throw UnimplementedError();
