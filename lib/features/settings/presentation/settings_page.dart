@@ -17,6 +17,7 @@ import 'package:nkgrabber/features/settings/presentation/background_setting.dart
 import 'package:nkgrabber/features/settings/presentation/theme_color_picker.dart';
 import 'package:nkgrabber/infrastructure/database/app_database.dart';
 import 'package:nkgrabber/infrastructure/providers.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class SettingsPage extends ConsumerWidget {
   const SettingsPage({super.key});
@@ -146,6 +147,13 @@ class _SettingsBody extends ConsumerWidget {
           title: Text('NKgrabber'),
           subtitle: Text('v${AppConstants.appVersion}'),
         ),
+        ListTile(
+          leading: const Icon(Icons.code),
+          title: const Text('项目地址'),
+          subtitle: const Text(AppConstants.projectUrl),
+          trailing: const Icon(Icons.open_in_new),
+          onTap: () => _openProjectPage(context),
+        ),
         const Divider(),
         // Last section on purpose: it is the one setting that changes what a
         // failure means, and it should not sit above the everyday controls.
@@ -170,6 +178,30 @@ class _SettingsBody extends ConsumerWidget {
             ),
           ),
       ],
+    );
+  }
+
+  Future<void> _openProjectPage(BuildContext context) async {
+    var opened = false;
+    try {
+      opened = await launchUrl(
+        Uri.parse(AppConstants.projectUrl),
+        mode: LaunchMode.externalApplication,
+      );
+    } on Exception {
+      // A missing browser must not make the project address inaccessible.
+    }
+    if (opened || !context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Text('无法打开浏览器，请复制项目地址后访问'),
+        action: SnackBarAction(
+          label: '复制链接',
+          onPressed: () => Clipboard.setData(
+            const ClipboardData(text: AppConstants.projectUrl),
+          ),
+        ),
+      ),
     );
   }
 

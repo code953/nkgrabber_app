@@ -53,6 +53,7 @@ dependencies:
   # Background image: derive the theme seed from the picture. Pinned by the
   # Flutter SDK; `any` defers to that pin rather than fighting it.
   material_color_utilities: any
+  url_launcher: ^6.3.3
 
 dev_dependencies:
   flutter_test:

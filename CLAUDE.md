@@ -88,6 +88,7 @@ Every page reads its data through providers; there are no stubs left.
 
 ## Key Technical Constraints
 
+- **The project address in Settings → About opens in the system browser only after a tap.** `AppConstants.projectUrl` is the public GitHub repository, opened with `url_launcher` in `externalApplication` mode. Failure offers clipboard copying. It does not fetch GitHub content, check updates, or add an app-side backend connection. Widget tests intercept the launcher channel to assert the URL, explicit-user-action boundary, external-browser mode and copy fallback.
 - **One HTTPS target only**: the campus system (`https://campus.nks.edu.cn`, form POST). There is no business backend — do not add one. The background downloader (below) is user-directed and is not a backend.
 - **The background image is cached, never streamed.** `BackgroundImageService` copies a local pick or downloads an image-host URL into `<app support>/background/`, and the app draws from that file. Things that look optional and are not:
   - **Only a bare file name is stored** (`app_settings.background_image_file`). iOS moves the app container on every update, so an absolute path would dangle after the first upgrade.

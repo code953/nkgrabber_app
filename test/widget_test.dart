@@ -924,6 +924,101 @@ void main() {
       await tester.pumpAndSettle();
     }
 
+    group('project address', () {
+      const channel = MethodChannel('plugins.flutter.io/url_launcher');
+      const url = 'https://github.com/code953/nkgrabber_app';
+      late List<MethodCall> calls;
+      late bool canOpen;
+      PlatformException? launchError;
+
+      setUp(() {
+        calls = [];
+        canOpen = true;
+        launchError = null;
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, (call) async {
+              calls.add(call);
+              if (launchError != null) throw launchError!;
+              return canOpen;
+            });
+      });
+
+      tearDown(() {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null);
+      });
+
+      Future<void> showProjectAddress(WidgetTester tester) async {
+        await _pumpApp(tester);
+        await openSettings(tester);
+        await tester.scrollUntilVisible(
+          find.text('项目地址'),
+          300,
+          scrollable: find
+              .descendant(
+                of: find.byType(SettingsPage),
+                matching: find.byType(Scrollable),
+              )
+              .first,
+        );
+        await tester.pumpAndSettle();
+      }
+
+      testWidgets('opens the displayed project URL only after a tap', (
+        tester,
+      ) async {
+        await showProjectAddress(tester);
+        expect(find.text(url), findsOneWidget);
+        expect(calls, isEmpty);
+
+        await tester.tap(find.text('项目地址'));
+        await tester.pumpAndSettle();
+
+        expect(calls, hasLength(1));
+        expect(calls.single.method, 'launch');
+        final args = calls.single.arguments as Map;
+        expect(args['url'], url);
+        expect(args['useSafariVC'], isFalse);
+        expect(args['useWebView'], isFalse);
+        expect(find.textContaining('无法打开浏览器'), findsNothing);
+      });
+
+      for (final throwsError in [false, true]) {
+        testWidgets(
+          'offers a copy fallback when browser ${throwsError ? 'throws' : 'refuses'}',
+          (tester) async {
+            canOpen = false;
+            if (throwsError)
+              launchError = PlatformException(code: 'NO_BROWSER');
+            String? copied;
+            tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+              SystemChannels.platform,
+              (call) async {
+                if (call.method == 'Clipboard.setData') {
+                  copied = (call.arguments as Map)['text'] as String;
+                }
+                return null;
+              },
+            );
+            addTearDown(
+              () => tester.binding.defaultBinaryMessenger
+                  .setMockMethodCallHandler(SystemChannels.platform, null),
+            );
+            await showProjectAddress(tester);
+            await tester.tap(find.text('项目地址'));
+            await tester.pumpAndSettle();
+
+            expect(calls, hasLength(1));
+            expect(find.textContaining('无法打开浏览器'), findsOneWidget);
+            await tester.tap(find.text('复制链接'));
+            await tester.pumpAndSettle();
+            expect(copied, url);
+            expect(tester.takeException(), isNull);
+          },
+        );
+      }
+    });
+
     testWidgets('renders the stored settings row', (tester) async {
       final db = AppDatabase(NativeDatabase.memory());
       // Seed the singleton row, then change it away from the defaults so a

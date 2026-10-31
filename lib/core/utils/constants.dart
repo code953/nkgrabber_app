@@ -11,6 +11,9 @@ class AppConstants {
   /// pubspec silently left the UI reporting the previous version to the user.
   static const appVersion = '1.0.2';
 
+  /// Public project page, opened only on an explicit user action.
+  static const projectUrl = 'https://github.com/code953/nkgrabber_app';
+
   /// Campus system base URL.
   static const campusBaseUrl = 'https://campus.nks.edu.cn';
 
