@@ -6,7 +6,9 @@ library;
 
 import 'dart:convert';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:file_saver/file_saver.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -110,21 +112,38 @@ class _ExportLogButton extends ConsumerWidget {
           await Clipboard.setData(ClipboardData(text: text));
           message = '已复制 ${entries.length} 条日志';
         case _ExportTarget.file:
-          await FileSaver.instance.saveAs(
-            name: grabLogFileName(DateTime.now()),
-            bytes: Uint8List.fromList(utf8.encode(text)),
-            fileExtension: 'txt',
-            mimeType: MimeType.text,
-          );
-          message = '已保存 ${entries.length} 条日志';
+          final fileName = grabLogFileName(DateTime.now());
+          final bytes = Uint8List.fromList(utf8.encode(text));
+          final String? path;
+          if (defaultTargetPlatform == TargetPlatform.windows) {
+            // file_saver 0.4.0's Windows handler has a 1 MiB stack buffer
+            // and a malformed Win32 filter. A native crash cannot be caught
+            // here. Use the existing picker, which also awaits the file write.
+            path = await FilePicker.saveFile(
+              dialogTitle: '保存抢课日志',
+              fileName: fileName,
+              type: FileType.custom,
+              allowedExtensions: const ['txt'],
+              bytes: bytes,
+              lockParentWindow: true,
+            );
+          } else {
+            path = await FileSaver.instance.saveAs(
+              name: fileName,
+              bytes: bytes,
+              fileExtension: 'txt',
+              mimeType: MimeType.text,
+            );
+          }
+          message = path == null ? '已取消导出' : '已保存 ${entries.length} 条日志';
       }
     } on Exception catch (e) {
-      // Saving can fail for reasons outside our control (cancelled dialog,
-      // no write permission). Say so rather than leaving the user unsure
-      // whether the export happened.
+      // Permission and I/O failures should be visible, not mistaken for a
+      // completed export. Cancellation is a normal null result above.
       message = '导出失败：$e';
     }
 
+    if (!messenger.mounted) return;
     messenger.showSnackBar(SnackBar(content: Text(message)));
   }
 }
